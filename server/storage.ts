@@ -11,6 +11,39 @@ const dbPath = process.env.DATABASE_PATH || "data.db";
 const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
 
+// Auto-create tables if they don't exist
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS games (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    date TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'setup',
+    first9_bet REAL NOT NULL DEFAULT 5,
+    second9_bet REAL NOT NULL DEFAULT 5,
+    whole_game_bet REAL NOT NULL DEFAULT 15,
+    birdie_pot REAL NOT NULL DEFAULT 3,
+    eagle_pot REAL NOT NULL DEFAULT 30,
+    longest_drive_bet REAL NOT NULL DEFAULT 3,
+    closest_pin_bet REAL NOT NULL DEFAULT 3
+  );
+  CREATE TABLE IF NOT EXISTS players (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    handicap INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    hole INTEGER NOT NULL,
+    gross_score INTEGER,
+    longest_drive REAL,
+    closest_pin REAL
+  );
+`);
+
 export const db = drizzle(sqlite);
 
 export interface IStorage {
