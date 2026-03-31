@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: golf-live-scoring
+    runtime: node
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: golf-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
