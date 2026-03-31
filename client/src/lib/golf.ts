@@ -176,46 +176,55 @@ export function computeMatchPlay(
     front9: 0, back9: 0, wholeGame: 0, total: 0,
   }));
 
-  for (let i = 0; i < entries.length; i++) {
-    for (let j = i + 1; j < entries.length; j++) {
-      const a = entries[i], b = entries[j];
+  if (entries.length < 2) return results;
 
-      // Front 9
-      const aFront9Holes = a.holeScores.slice(0, 9).filter(s => s !== null).length;
-      const bFront9Holes = b.holeScores.slice(0, 9).filter(s => s !== null).length;
-      if (aFront9Holes === 9 && bFront9Holes === 9) {
-        if (a.front9Net < b.front9Net) {
-          results[i].front9 += front9Bet;
-          results[j].front9 -= front9Bet;
-        } else if (a.front9Net > b.front9Net) {
-          results[i].front9 -= front9Bet;
-          results[j].front9 += front9Bet;
-        }
-      }
+  // Build index map: playerId -> results index
+  const idxMap = new Map<number, number>();
+  entries.forEach((e, i) => idxMap.set(e.player.id, i));
 
-      // Back 9
-      const aBack9Holes = a.holeScores.slice(9, 18).filter(s => s !== null).length;
-      const bBack9Holes = b.holeScores.slice(9, 18).filter(s => s !== null).length;
-      if (aBack9Holes === 9 && bBack9Holes === 9) {
-        if (a.back9Net < b.back9Net) {
-          results[i].back9 += back9Bet;
-          results[j].back9 -= back9Bet;
-        } else if (a.back9Net > b.back9Net) {
-          results[i].back9 -= back9Bet;
-          results[j].back9 += back9Bet;
-        }
-      }
+  // Winner-takes-all: lowest net wins the segment, collects bet from each loser.
+  // If winners tie, losers'  bet is split equally among winners.
 
-      // Whole game
-      if (a.holesPlayed === 18 && b.holesPlayed === 18) {
-        if (a.netTotal < b.netTotal) {
-          results[i].wholeGame += wholeGameBet;
-          results[j].wholeGame -= wholeGameBet;
-        } else if (a.netTotal > b.netTotal) {
-          results[i].wholeGame -= wholeGameBet;
-          results[j].wholeGame += wholeGameBet;
-        }
-      }
+  // Front 9
+  const allFront9Done = entries.every(e =>
+    e.holeScores.slice(0, 9).filter(s => s !== null).length === 9
+  );
+  if (allFront9Done) {
+    const bestNet = Math.min(...entries.map(e => e.front9Net));
+    const winners = entries.filter(e => e.front9Net === bestNet);
+    const losers = entries.filter(e => e.front9Net !== bestNet);
+    if (losers.length > 0) {
+      const perWinner = (front9Bet * losers.length) / winners.length;
+      for (const w of winners) results[idxMap.get(w.player.id)!].front9 = perWinner;
+      for (const l of losers) results[idxMap.get(l.player.id)!].front9 = -front9Bet;
+    }
+  }
+
+  // Back 9
+  const allBack9Done = entries.every(e =>
+    e.holeScores.slice(9, 18).filter(s => s !== null).length === 9
+  );
+  if (allBack9Done) {
+    const bestNet = Math.min(...entries.map(e => e.back9Net));
+    const winners = entries.filter(e => e.back9Net === bestNet);
+    const losers = entries.filter(e => e.back9Net !== bestNet);
+    if (losers.length > 0) {
+      const perWinner = (back9Bet * losers.length) / winners.length;
+      for (const w of winners) results[idxMap.get(w.player.id)!].back9 = perWinner;
+      for (const l of losers) results[idxMap.get(l.player.id)!].back9 = -back9Bet;
+    }
+  }
+
+  // Whole game
+  const allDone = entries.every(e => e.holesPlayed === 18);
+  if (allDone) {
+    const bestNet = Math.min(...entries.map(e => e.netTotal));
+    const winners = entries.filter(e => e.netTotal === bestNet);
+    const losers = entries.filter(e => e.netTotal !== bestNet);
+    if (losers.length > 0) {
+      const perWinner = (wholeGameBet * losers.length) / winners.length;
+      for (const w of winners) results[idxMap.get(w.player.id)!].wholeGame = perWinner;
+      for (const l of losers) results[idxMap.get(l.player.id)!].wholeGame = -wholeGameBet;
     }
   }
 
