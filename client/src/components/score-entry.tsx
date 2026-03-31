@@ -213,8 +213,9 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                 data-testid="input-longest-drive"
                 type="number"
                 placeholder="Distance in meters"
-                value={longestDrive ?? ""}
-                onChange={e => {
+                defaultValue={longestDrive ?? ""}
+                key={`ld-${selectedPlayerId}-${currentHole}`}
+                onBlur={e => {
                   const val = e.target.value ? parseFloat(e.target.value) : null;
                   saveScore({ longestDrive: val });
                 }}
@@ -236,8 +237,9 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                 data-testid="input-closest-pin"
                 type="number"
                 placeholder="Distance in cm"
-                value={closestPin ?? ""}
-                onChange={e => {
+                defaultValue={closestPin ?? ""}
+                key={`cp-${selectedPlayerId}-${currentHole}`}
+                onBlur={e => {
                   const val = e.target.value ? parseFloat(e.target.value) : null;
                   saveScore({ closestPin: val });
                 }}

@@ -7,6 +7,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/data/data.db
     disk:
       name: golf-data
       mountPath: /opt/render/project/src/data

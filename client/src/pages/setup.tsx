@@ -63,11 +63,18 @@ export default function Setup() {
       const game = await gameRes.json();
 
       // Add all players
+      let addedCount = 0;
       for (const p of players) {
         await apiRequest("POST", `/api/games/${game.id}/players`, {
           name: p.name,
           handicap: p.handicap,
         });
+        addedCount++;
+      }
+
+      // Only start the game if all players were added
+      if (addedCount !== players.length) {
+        throw new Error("Not all players were added. Please try again.");
       }
 
       // Start the game
