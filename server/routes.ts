@@ -169,27 +169,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ...safe, hasPin: !!pin });
   });
 
-  // Claim profile: link a game-player to a roster entry and set PIN
+  // Claim profile: link a game-player to a roster entry, optionally set PIN
   app.post("/api/roster/:id/claim", (req, res) => {
     try {
       const rosterId = Number(req.params.id);
       const rp = storage.getRosterPlayer(rosterId);
       if (!rp) return res.status(404).json({ error: "Roster player not found" });
       const { pin, playerId } = req.body;
-      if (!pin || typeof pin !== "string" || !/^\d{4}$/.test(pin)) {
-        return res.status(400).json({ error: "PIN must be exactly 4 digits" });
-      }
       // If already has a PIN, reject — use verify-pin first
       if (rp.pin) {
         return res.status(409).json({ error: "Profile already claimed. Use PIN to verify." });
       }
-      // Set the PIN
-      storage.updateRosterPlayer(rosterId, { pin });
+      // Set PIN only if provided (PIN is optional — first claim can be without PIN)
+      if (pin && typeof pin === "string" && /^\d{4}$/.test(pin)) {
+        storage.updateRosterPlayer(rosterId, { pin });
+      }
       // Link the game-player if provided
       if (playerId) {
         storage.updatePlayer(Number(playerId), { rosterId });
       }
-      res.json({ ok: true });
+      res.json({ ok: true, rosterId });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -229,10 +228,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const rosterId = Number(req.params.id);
       const rp = storage.getRosterPlayer(rosterId);
       if (!rp) return res.status(404).json({ error: "Roster player not found" });
-      // Privacy check — PIN in query param or stats must be public
+      // Privacy check: if no PIN set, stats are open. If PIN set, require PIN or statsPublic flag.
       const pin = req.query.pin as string | undefined;
-      if (!rp.statsPublic && (!pin || pin !== rp.pin)) {
-        return res.status(403).json({ error: "Stats are private. PIN required.", hasPin: !!rp.pin });
+      const hasPin = !!rp.pin;
+      if (hasPin && !rp.statsPublic && (!pin || pin !== rp.pin)) {
+        return res.status(403).json({ error: "Stats are private. PIN required.", hasPin: true });
       }
       // Gather all game-player records linked to this roster ID
       const linkedPlayers = storage.getPlayersByRosterId(rosterId);

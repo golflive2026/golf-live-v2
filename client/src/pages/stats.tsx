@@ -119,6 +119,13 @@ export default function StatsPage() {
   });
 
   // Fetch stats (with PIN if needed)
+  // Stats are open when: no PIN set, OR statsPublic=1, OR user entered correct PIN
+  const canFetchStats = rosterInfo && (
+    !rosterInfo.hasPin ||         // no PIN set → stats are open
+    rosterInfo.statsPublic === 1 || // explicitly public
+    enteredPin !== null             // user entered a PIN to try
+  );
+
   const { data: stats, error: statsError, isLoading } = useQuery<StatsData>({
     queryKey: ["/api/roster", rosterId, "stats", enteredPin],
     queryFn: async () => {
@@ -128,14 +135,13 @@ export default function StatsPage() {
       const res = await apiRequest("GET", url);
       return res.json();
     },
-    enabled: rosterId > 0 && (rosterInfo?.statsPublic === 1 || enteredPin !== null),
+    enabled: rosterId > 0 && !!canFetchStats,
     retry: false,
   });
 
   if (!matched) return null;
 
-  const needsPin = rosterInfo && !rosterInfo.statsPublic && rosterInfo.hasPin && !stats;
-  const noPin = rosterInfo && !rosterInfo.statsPublic && !rosterInfo.hasPin;
+  const needsPin = rosterInfo && rosterInfo.hasPin && !rosterInfo.statsPublic && !stats;
 
   // React to query errors — reliable replacement for setTimeout
   useEffect(() => {
@@ -194,8 +200,9 @@ export default function StatsPage() {
     );
   }
 
-  // No PIN set and stats are private
-  if (noPin) {
+  // No PIN set and stats are private — this shouldn't happen anymore
+  // since stats are open when no PIN is set, but keep as fallback
+  if (rosterInfo && !canFetchStats) {
     return (
       <div className="min-h-screen bg-background px-4 py-6">
         <div className="max-w-lg mx-auto">
@@ -209,7 +216,7 @@ export default function StatsPage() {
             <CardContent className="p-6 text-center space-y-3">
               <Lock className="w-10 h-10 text-muted-foreground mx-auto" />
               <p className="text-sm text-muted-foreground">
-                No profile claimed yet. Claim your profile after finishing a game to see stats.
+                Stats are not available.
               </p>
               <Button variant="secondary" onClick={() => navigate("/")}>
                 Go Home
