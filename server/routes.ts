@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage, exportAllData, importAllData } from "./storage";
+import { storage, exportAllData, importAllData, getStorageStatus } from "./storage";
 import { COURSE_LIST, getCourse } from "@shared/schema";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
 
@@ -312,6 +312,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // === DATA MANAGEMENT ===
+
+  // === DATA MANAGEMENT & HEALTH ===
+
+  // Health/status endpoint — check database state, backup status
+  app.get("/api/health", (_req, res) => {
+    res.json(getStorageStatus());
+  });
 
   // Export full database as JSON (for manual backup)
   app.get("/api/export", (_req, res) => {

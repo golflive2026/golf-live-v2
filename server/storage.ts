@@ -7,8 +7,9 @@ import {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, and, desc } from "drizzle-orm";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, statfsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { pushToCloud, pullFromCloud, isCloudBackupEnabled } from "./cloud-backup";
 
 const dbPath = process.env.DATABASE_PATH || "data.db";
 const backupPath = dbPath.replace(/\.db$/, "-backup.json");
@@ -101,63 +102,142 @@ try { sqlite.exec("ALTER TABLE roster ADD COLUMN stats_public INTEGER NOT NULL D
 
 export const db = drizzle(sqlite);
 
-// === AUTO-RESTORE: If database is empty, try to restore from JSON backup ===
+// === RESTORE CHAIN: local SQLite → local JSON → cloud Gist ===
 const gameCount = (sqlite.prepare("SELECT COUNT(*) as count FROM games").get() as any)?.count ?? 0;
 
-if (gameCount === 0 && existsSync(backupPath)) {
-  console.log(`[STORAGE] Database is empty but backup found at ${backupPath} — restoring...`);
-  try {
-    const backup = JSON.parse(readFileSync(backupPath, "utf-8"));
-    const tx = sqlite.transaction(() => {
-      for (const g of backup.games || []) {
-        sqlite.prepare(`INSERT OR REPLACE INTO games (id, name, date, code, course_id, status, first9_bet, second9_bet, whole_game_bet, birdie_pot, eagle_pot, longest_drive_bet, closest_pin_bet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-          g.id, g.name, g.date, g.code, g.courseId || "st-sofia", g.status, g.first9Bet, g.second9Bet, g.wholeGameBet, g.birdiePot, g.eaglePot, g.longestDriveBet, g.closestPinBet
-        );
-      }
-      for (const p of backup.players || []) {
-        sqlite.prepare(`INSERT OR REPLACE INTO players (id, game_id, name, handicap, roster_id) VALUES (?, ?, ?, ?, ?)`).run(
-          p.id, p.gameId, p.name, p.handicap, p.rosterId ?? null
-        );
-      }
-      for (const s of backup.scores || []) {
-        sqlite.prepare(`INSERT OR REPLACE INTO scores (id, game_id, player_id, hole, gross_score, longest_drive, closest_pin) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-          s.id, s.gameId, s.playerId, s.hole, s.grossScore ?? null, s.longestDrive ?? null, s.closestPin ?? null
-        );
-      }
-      for (const r of backup.roster || []) {
-        sqlite.prepare(`INSERT OR REPLACE INTO roster (id, name, handicap, pin, stats_public) VALUES (?, ?, ?, ?, ?)`).run(
-          r.id, r.name, r.handicap, r.pin ?? null, r.statsPublic ?? 0
-        );
-      }
-    });
-    tx();
-    const restored = (sqlite.prepare("SELECT COUNT(*) as count FROM games").get() as any)?.count ?? 0;
-    console.log(`[STORAGE] Restored ${restored} games from backup`);
-  } catch (e) {
-    console.error(`[STORAGE] Failed to restore from backup:`, e);
-  }
-} else if (gameCount === 0) {
-  console.warn(`[STORAGE] Database is empty and no backup found at ${backupPath}`);
-} else {
-  console.log(`[STORAGE] Database has ${gameCount} games`);
+function restoreFromBackup(backup: any, source: string): number {
+  const tx = sqlite.transaction(() => {
+    for (const g of backup.games || []) {
+      sqlite.prepare(`INSERT OR REPLACE INTO games (id, name, date, code, course_id, status, first9_bet, second9_bet, whole_game_bet, birdie_pot, eagle_pot, longest_drive_bet, closest_pin_bet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        g.id, g.name, g.date, g.code, g.courseId || g.course_id || "st-sofia", g.status,
+        g.first9Bet ?? g.first9_bet ?? 5, g.second9Bet ?? g.second9_bet ?? 5,
+        g.wholeGameBet ?? g.whole_game_bet ?? 15, g.birdiePot ?? g.birdie_pot ?? 3,
+        g.eaglePot ?? g.eagle_pot ?? 30, g.longestDriveBet ?? g.longest_drive_bet ?? 3,
+        g.closestPinBet ?? g.closest_pin_bet ?? 3
+      );
+    }
+    for (const p of backup.players || []) {
+      sqlite.prepare(`INSERT OR REPLACE INTO players (id, game_id, name, handicap, roster_id) VALUES (?, ?, ?, ?, ?)`).run(
+        p.id, p.gameId ?? p.game_id, p.name, p.handicap, p.rosterId ?? p.roster_id ?? null
+      );
+    }
+    for (const s of backup.scores || []) {
+      sqlite.prepare(`INSERT OR REPLACE INTO scores (id, game_id, player_id, hole, gross_score, longest_drive, closest_pin) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        s.id, s.gameId ?? s.game_id, s.playerId ?? s.player_id, s.hole,
+        s.grossScore ?? s.gross_score ?? null, s.longestDrive ?? s.longest_drive ?? null,
+        s.closestPin ?? s.closest_pin ?? null
+      );
+    }
+    for (const r of backup.roster || []) {
+      sqlite.prepare(`INSERT OR REPLACE INTO roster (id, name, handicap, pin, stats_public) VALUES (?, ?, ?, ?, ?)`).run(
+        r.id, r.name, r.handicap, r.pin ?? null, r.statsPublic ?? r.stats_public ?? 0
+      );
+    }
+  });
+  tx();
+  const count = (sqlite.prepare("SELECT COUNT(*) as count FROM games").get() as any)?.count ?? 0;
+  console.log(`[STORAGE] Restored ${count} games from ${source}`);
+  return count;
 }
 
+if (gameCount > 0) {
+  console.log(`[STORAGE] Database has ${gameCount} games — no restore needed`);
+} else {
+  console.warn(`[STORAGE] Database is empty — starting restore chain...`);
+  let restored = false;
+
+  // Step 1: Try local JSON backup
+  if (!restored && existsSync(backupPath)) {
+    console.log(`[STORAGE] Trying local backup: ${backupPath}`);
+    try {
+      const backup = JSON.parse(readFileSync(backupPath, "utf-8"));
+      if (backup.games?.length > 0) {
+        restoreFromBackup(backup, "local JSON backup");
+        restored = true;
+      }
+    } catch (e) {
+      console.error(`[STORAGE] Local backup restore failed:`, e);
+    }
+  }
+
+  // Step 2: Try cloud backup (GitHub Gist) — async, run at startup
+  if (!restored && isCloudBackupEnabled()) {
+    console.log(`[STORAGE] Trying cloud backup (GitHub Gist)...`);
+    // We need to do this synchronously at startup — use a flag and restore when ready
+    pullFromCloud().then((backup) => {
+      if (backup && backup.games?.length > 0) {
+        const currentCount = (sqlite.prepare("SELECT COUNT(*) as count FROM games").get() as any)?.count ?? 0;
+        if (currentCount === 0) {
+          restoreFromBackup(backup, "GitHub Gist cloud backup");
+        }
+      } else {
+        console.log(`[STORAGE] No cloud backup available`);
+      }
+    }).catch(e => {
+      console.error(`[STORAGE] Cloud restore failed:`, e);
+    });
+  }
+
+  if (!restored) {
+    console.warn(`[STORAGE] No backup found — starting fresh`);
+    if (!isCloudBackupEnabled()) {
+      console.warn(`[STORAGE] TIP: Set GITHUB_BACKUP_TOKEN env var to enable cloud backup`);
+    }
+  }
+}
+
+console.log(`[STORAGE] Cloud backup: ${isCloudBackupEnabled() ? "ENABLED" : "DISABLED (set GITHUB_BACKUP_TOKEN)"}`);
 console.log(`[STORAGE] ===== STARTUP COMPLETE =====`);
 
-// === AUTO-BACKUP: Save full database to JSON after mutations ===
+// === STATUS tracking ===
+let lastBackupTime: string | null = null;
+let lastCloudBackupTime: string | null = null;
+let lastCloudBackupOk: boolean | null = null;
+
+export function getStorageStatus() {
+  const count = (sqlite.prepare("SELECT COUNT(*) as count FROM games").get() as any)?.count ?? 0;
+  const playerCount = (sqlite.prepare("SELECT COUNT(*) as count FROM players").get() as any)?.count ?? 0;
+  const rosterCount = (sqlite.prepare("SELECT COUNT(*) as count FROM roster").get() as any)?.count ?? 0;
+  return {
+    dbPath: path.resolve(dbPath),
+    databasePathEnv: process.env.DATABASE_PATH || "(not set — using default)",
+    cloudBackup: isCloudBackupEnabled() ? "enabled" : "disabled",
+    games: count,
+    players: playerCount,
+    roster: rosterCount,
+    lastLocalBackup: lastBackupTime,
+    lastCloudBackup: lastCloudBackupTime,
+    lastCloudBackupOk,
+  };
+}
+
+// === AUTO-BACKUP: local JSON + cloud Gist after mutations ===
 let backupTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function scheduleBackup() {
-  // Debounce: backup at most once per 5 seconds
+  // Debounce: backup at most once per 10 seconds
   if (backupTimer) clearTimeout(backupTimer);
   backupTimer = setTimeout(() => {
     try {
       const data = exportAllData();
+
+      // 1. Local JSON backup (sync, instant)
       writeFileSync(backupPath, JSON.stringify(data), "utf-8");
+      lastBackupTime = new Date().toISOString();
+
+      // 2. Cloud backup (async, non-blocking)
+      if (isCloudBackupEnabled()) {
+        pushToCloud(data).then(ok => {
+          lastCloudBackupTime = new Date().toISOString();
+          lastCloudBackupOk = ok;
+        }).catch(() => {
+          lastCloudBackupOk = false;
+        });
+      }
     } catch (e) {
       console.error("[STORAGE] Backup failed:", e);
     }
-  }, 5000);
+  }, 10000);
 }
 
 export function exportAllData() {
@@ -341,19 +421,29 @@ export class DatabaseStorage implements IStorage {
 
 export const storage = new DatabaseStorage();
 
-// Graceful shutdown: flush backup + close SQLite
-function closeDb() {
+// Graceful shutdown: flush local + cloud backup, then close SQLite
+async function closeDb() {
   try {
-    // Force immediate backup before shutdown
     if (backupTimer) clearTimeout(backupTimer);
     const data = exportAllData();
+
+    // 1. Local backup (sync)
     writeFileSync(backupPath, JSON.stringify(data), "utf-8");
-    console.log("[STORAGE] Final backup saved");
+    console.log("[STORAGE] Final local backup saved");
+
+    // 2. Cloud backup (await — this is our last chance before container dies)
+    if (isCloudBackupEnabled()) {
+      console.log("[STORAGE] Pushing final cloud backup...");
+      const ok = await pushToCloud(data);
+      console.log(`[STORAGE] Cloud backup: ${ok ? "SUCCESS" : "FAILED"}`);
+    }
+
     sqlite.close();
     console.log("[STORAGE] Database closed cleanly");
   } catch (e) {
     console.error("[STORAGE] Shutdown error:", e);
   }
+  process.exit(0);
 }
-process.on("SIGTERM", closeDb);
-process.on("SIGINT", closeDb);
+process.on("SIGTERM", () => { closeDb(); });
+process.on("SIGINT", () => { closeDb(); });
