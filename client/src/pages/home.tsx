@@ -4,15 +4,16 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getCourse, type Game } from "@shared/schema";
-import { Plus, LogIn, Flag, History, MapPin, Zap, Settings2 } from "lucide-react";
+import { Plus, LogIn, Flag, History, MapPin, Zap, Settings2, ChevronDown, Trash2 } from "lucide-react";
 
 export default function Home() {
   const [, navigate] = useLocation();
   const [joinCode, setJoinCode] = useState("");
   const [joining, setJoining] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const { toast } = useToast();
 
   const { data: games } = useQuery<Game[]>({
@@ -38,7 +39,21 @@ export default function Home() {
     }
   };
 
-  const recentGames = games?.slice(0, 5) || [];
+  const deleteGame = async (gameId: number, gameName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${gameName}"? All scores and player data will be permanently removed.`)) return;
+    try {
+      await apiRequest("DELETE", `/api/games/${gameId}`);
+      await queryClient.invalidateQueries({ queryKey: ["/api/games"] });
+      toast({ title: "Game deleted" });
+    } catch {
+      toast({ title: "Failed to delete", variant: "destructive" });
+    }
+  };
+
+  const allGames = games || [];
+  const displayGames = showAll ? allGames : allGames.slice(0, 5);
+  const hasMore = allGames.length > 5;
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
@@ -104,23 +119,23 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {recentGames.length > 0 && (
+        {allGames.length > 0 && (
           <Card className="border-border">
             <CardContent className="p-5 space-y-3">
               <div className="flex items-center gap-2 mb-1">
                 <History className="w-4 h-4 text-muted-foreground" />
                 <p className="text-sm font-medium text-foreground">Recent Games</p>
               </div>
-              {recentGames.map(g => {
+              {displayGames.map(g => {
                 const c = getCourse(g.courseId);
                 return (
-                  <button
+                  <div
                     key={g.id}
-                    className="w-full text-left flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    className="w-full flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
                     onClick={() => navigate(`/game/${g.id}`)}
                     data-testid={`button-game-${g.id}`}
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium text-sm truncate">{g.name}</div>
                       <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         <MapPin className="w-3 h-3" />
@@ -129,16 +144,35 @@ export default function Home() {
                         <span>{g.date}</span>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ml-2 ${
-                      g.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
-                      g.status === "finished" ? "bg-muted text-muted-foreground" :
-                      "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
-                    }`}>
-                      {g.status}
-                    </span>
-                  </button>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                        g.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
+                        g.status === "finished" ? "bg-muted text-muted-foreground" :
+                        "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                      }`}>
+                        {g.status}
+                      </span>
+                      <button
+                        onClick={(e) => deleteGame(g.id, g.name, e)}
+                        className="p-1 rounded hover:bg-destructive/10 transition-colors"
+                        title="Delete game"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
+              {hasMore && (
+                <Button
+                  variant="ghost"
+                  className="w-full h-9 text-xs text-muted-foreground"
+                  onClick={() => setShowAll(!showAll)}
+                >
+                  <ChevronDown className={`w-4 h-4 mr-1 transition-transform ${showAll ? "rotate-180" : ""}`} />
+                  {showAll ? "Show less" : `Show all ${allGames.length} games`}
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}

@@ -74,6 +74,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(game);
   });
 
+  app.delete("/api/games/:id", (req, res) => {
+    const game = storage.getGame(Number(req.params.id));
+    if (!game) return res.status(404).json({ error: "Game not found" });
+    storage.deleteGame(game.id);
+    res.json({ ok: true });
+  });
+
   app.post("/api/games/:id/players", (req, res) => {
     try {
       const gameId = Number(req.params.id);

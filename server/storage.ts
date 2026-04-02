@@ -62,6 +62,7 @@ export interface IStorage {
   getGameByCode(code: string): Game | undefined;
   updateGame(id: number, data: Partial<InsertGame>): Game | undefined;
   listGames(): Game[];
+  deleteGame(id: number): void;
   createPlayer(player: InsertPlayer): Player;
   getPlayersByGame(gameId: number): Player[];
   getPlayer(id: number): Player | undefined;
@@ -91,6 +92,11 @@ export class DatabaseStorage implements IStorage {
   }
   listGames(): Game[] {
     return db.select().from(games).orderBy(desc(games.id)).all();
+  }
+  deleteGame(id: number): void {
+    db.delete(scores).where(eq(scores.gameId, id)).run();
+    db.delete(players).where(eq(players.gameId, id)).run();
+    db.delete(games).where(eq(games.id, id)).run();
   }
   createPlayer(player: InsertPlayer): Player {
     return db.insert(players).values(player).returning().get();

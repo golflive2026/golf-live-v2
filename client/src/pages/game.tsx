@@ -24,6 +24,7 @@ export default function GamePage() {
   const [tab, setTab] = useState<Tab>("quick");
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [showPace, setShowPace] = useState(false);
+  const [currentHole, setCurrentHole] = useState(1);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -159,10 +160,10 @@ export default function GamePage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {showPace && <PaceTimer gameId={game.id} currentHole={1} />}
+        {showPace && <PaceTimer gameId={game.id} currentHole={currentHole} />}
 
         {tab === "quick" && (
-          <QuickScore game={game} players={players} scores={scores} course={course} />
+          <QuickScore game={game} players={players} scores={scores} course={course} onHoleChange={setCurrentHole} />
         )}
         {tab === "score" && (
           <ScoreEntry

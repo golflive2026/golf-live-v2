@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { type CourseData, type Game, type Player, type Score, getStrokesForHole } from "@shared/schema";
 import { buildScoresMap, getScoreLabel, getScoreBgClass } from "@/lib/golf";
 import { playScoreSound } from "@/lib/sounds";
@@ -12,10 +13,11 @@ interface Props {
   players: Player[];
   scores: Score[];
   course: CourseData;
+  onHoleChange?: (hole: number) => void;
 }
 
-export default function QuickScore({ game, players, scores, course }: Props) {
-  const [currentHole, setCurrentHole] = useState(() => {
+export default function QuickScore({ game, players, scores, course, onHoleChange }: Props) {
+  const [currentHole, setCurrentHoleInternal] = useState(() => {
     const scoresMap = buildScoresMap(scores);
     for (let h = 1; h <= 18; h++) {
       const allScored = players.every(p => scoresMap.get(p.id)?.get(h)?.grossScore != null);
@@ -23,6 +25,14 @@ export default function QuickScore({ game, players, scores, course }: Props) {
     }
     return 18;
   });
+
+  const setCurrentHole = (h: number) => {
+    setCurrentHoleInternal(h);
+    onHoleChange?.(h);
+  };
+
+  // Report initial hole to parent
+  useEffect(() => { onHoleChange?.(currentHole); }, []);
 
   const scoresMap = buildScoresMap(scores);
   const par = course.holePars[currentHole - 1];
@@ -32,7 +42,6 @@ export default function QuickScore({ game, players, scores, course }: Props) {
   const allScoredThisHole = players.every(p => scoresMap.get(p.id)?.get(currentHole)?.grossScore != null);
   const scoredCount = players.filter(p => scoresMap.get(p.id)?.get(currentHole)?.grossScore != null).length;
 
-  // Auto-advance to next hole when all players scored
   useEffect(() => {
     if (allScoredThisHole && !prevAllScoredRef.current && currentHole < 18) {
       const timer = setTimeout(() => setCurrentHole(currentHole + 1), 800);
@@ -60,7 +69,6 @@ export default function QuickScore({ game, players, scores, course }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Hole navigation strip */}
       <div className="flex gap-1 overflow-x-auto pb-1 -mx-1 px-1">
         {Array.from({ length: 18 }, (_, i) => {
           const h = i + 1;
@@ -80,7 +88,6 @@ export default function QuickScore({ game, players, scores, course }: Props) {
         })}
       </div>
 
-      {/* Hole header */}
       <Card className="border-border overflow-hidden">
         <div className="golf-gradient px-4 py-2.5 flex items-center justify-between">
           <div>
@@ -99,24 +106,26 @@ export default function QuickScore({ game, players, scores, course }: Props) {
       </Card>
 
       {/* Quick score labels */}
-      <div className="grid gap-0.5" style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem)` }}>
+      <div className="grid gap-0.5" style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem) 3rem` }}>
         <div className="text-[10px] text-muted-foreground font-medium px-2">Player</div>
         {quickValues.map(v => (
           <div key={v} className="text-center text-[10px] text-muted-foreground font-medium">
             {v === par ? "Par" : v < par ? v - par : "+" + (v - par)}
           </div>
         ))}
+        <div className="text-center text-[10px] text-muted-foreground font-medium">Other</div>
       </div>
 
       {/* Player rows */}
       {players.map(player => {
         const existing = scoresMap.get(player.id)?.get(currentHole)?.grossScore ?? null;
         const strokes = getStrokesForHole(player.handicap, course.holeHcp[currentHole - 1]);
+        const isCustomScore = existing != null && !quickValues.includes(existing);
         return (
           <div
             key={player.id}
             className={`grid gap-0.5 items-center rounded-lg py-1 transition-colors ${existing != null ? "opacity-70" : ""}`}
-            style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem)` }}
+            style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem) 3rem` }}
           >
             <div className="flex items-center gap-1 px-2 min-w-0">
               {existing != null ? (
@@ -154,11 +163,30 @@ export default function QuickScore({ game, players, scores, course }: Props) {
                 {v}
               </button>
             ))}
+            {/* Custom score input for anything beyond the quick buttons */}
+            <Input
+              type="number"
+              className={`h-10 w-12 text-center text-sm font-bold px-1 ${isCustomScore ? "ring-2 ring-primary/50 bg-primary/10" : ""}`}
+              placeholder="..."
+              min={1}
+              defaultValue={isCustomScore ? existing : ""}
+              key={`custom-${player.id}-${currentHole}-${isCustomScore ? existing : ""}`}
+              onBlur={e => {
+                const val = parseInt(e.target.value);
+                if (val && val >= 1) saveScore(player.id, val);
+              }}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  const val = parseInt((e.target as HTMLInputElement).value);
+                  if (val && val >= 1) saveScore(player.id, val);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+            />
           </div>
         );
       })}
 
-      {/* Hole navigation */}
       <div className="flex gap-3 pt-2">
         <Button
           variant="secondary"

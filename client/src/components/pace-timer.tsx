@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Play, RotateCcw } from "lucide-react";
+import { Clock, RotateCcw } from "lucide-react";
 
 interface Props {
   gameId: number;
@@ -31,65 +31,74 @@ function savePace(gameId: number, data: PaceData) {
 }
 
 function formatDuration(ms: number): string {
+  if (ms <= 0) return "0:00";
   const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 export default function PaceTimer({ gameId, currentHole }: Props) {
   const [pace, setPace] = useState(() => loadPace(gameId));
   const [now, setNow] = useState(Date.now());
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const prevHoleRef = useRef(currentHole);
 
-  // Auto-start timer for current hole if not started
+  // Auto-start timer for current hole, auto-end previous hole when hole changes
   useEffect(() => {
-    if (!pace.holeStartTimes[currentHole]) {
-      const updated = { ...pace, holeStartTimes: { ...pace.holeStartTimes, [currentHole]: Date.now() } };
+    const prev = prevHoleRef.current;
+    const updated = { ...pace };
+    let changed = false;
+
+    // End previous hole if it was running
+    if (prev !== currentHole && updated.holeStartTimes[prev] && !updated.holeEndTimes[prev]) {
+      updated.holeEndTimes = { ...updated.holeEndTimes, [prev]: Date.now() };
+      changed = true;
+    }
+
+    // Start current hole if not started
+    if (!updated.holeStartTimes[currentHole]) {
+      updated.holeStartTimes = { ...updated.holeStartTimes, [currentHole]: Date.now() };
+      changed = true;
+    }
+
+    if (changed) {
       setPace(updated);
       savePace(gameId, updated);
     }
+    prevHoleRef.current = currentHole;
   }, [currentHole]);
 
   // Tick every second
   useEffect(() => {
-    timerRef.current = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timerRef.current);
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   const holeStart = pace.holeStartTimes[currentHole];
-  const holeElapsed = holeStart ? now - holeStart : 0;
+  const holeEnd = pace.holeEndTimes[currentHole];
+  const holeElapsed = holeStart ? (holeEnd || now) - holeStart : 0;
 
-  // Compute completed hole durations
-  const completedHoles: number[] = [];
+  // Completed holes for avg calculation
+  let completedCount = 0;
+  let completedTotal = 0;
   for (let h = 1; h <= 18; h++) {
     const start = pace.holeStartTimes[h];
-    const end = pace.holeEndTimes[h] || (h === currentHole ? now : 0);
-    if (start && end) completedHoles.push(end - start);
-  }
-  const avgMs = completedHoles.length > 0 ? completedHoles.reduce((a, b) => a + b, 0) / completedHoles.length : 0;
-  const totalElapsed = now - pace.gameStartTime;
-
-  const markHoleDone = () => {
-    const updated = {
-      ...pace,
-      holeEndTimes: { ...pace.holeEndTimes, [currentHole]: Date.now() },
-    };
-    // Auto-start next hole
-    if (currentHole < 18 && !updated.holeStartTimes[currentHole + 1]) {
-      updated.holeStartTimes[currentHole + 1] = Date.now();
+    const end = pace.holeEndTimes[h];
+    if (start && end) {
+      completedCount++;
+      completedTotal += end - start;
     }
-    setPace(updated);
-    savePace(gameId, updated);
-  };
+  }
+  const avgMs = completedCount > 0 ? completedTotal / completedCount : 0;
+  const totalElapsed = now - pace.gameStartTime;
 
   const resetTimer = () => {
     const fresh: PaceData = { holeStartTimes: { [currentHole]: Date.now() }, holeEndTimes: {}, gameStartTime: Date.now() };
     setPace(fresh);
     savePace(gameId, fresh);
   };
-
-  const isDone = !!pace.holeEndTimes[currentHole];
 
   return (
     <Card className="border-border">
@@ -98,7 +107,7 @@ export default function PaceTimer({ gameId, currentHole }: Props) {
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-muted-foreground" />
             <div>
-              <div className="text-xs text-muted-foreground">Hole {currentHole}</div>
+              <div className="text-[10px] text-muted-foreground">Hole {currentHole}</div>
               <div className={`text-lg font-bold tabular-nums ${
                 holeElapsed > 15 * 60 * 1000 ? "text-red-500" :
                 holeElapsed > 12 * 60 * 1000 ? "text-yellow-500" : "text-foreground"
@@ -118,16 +127,9 @@ export default function PaceTimer({ gameId, currentHole }: Props) {
             <div className="text-sm font-semibold tabular-nums">{formatDuration(totalElapsed)}</div>
           </div>
 
-          <div className="flex gap-1">
-            {!isDone && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={markHoleDone} title="Mark hole done">
-                <Play className="w-4 h-4" />
-              </Button>
-            )}
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={resetTimer} title="Reset timer">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
-          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={resetTimer} title="Reset all timers">
+            <RotateCcw className="w-3.5 h-3.5" />
+          </Button>
         </div>
       </CardContent>
     </Card>
