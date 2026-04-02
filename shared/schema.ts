@@ -90,6 +90,7 @@ export const players = sqliteTable("players", {
   gameId: integer("game_id").notNull(),
   name: text("name").notNull(),
   handicap: integer("handicap").notNull().default(0),
+  rosterId: integer("roster_id"),
 });
 
 export const insertPlayerSchema = createInsertSchema(players).omit({ id: true });
@@ -116,6 +117,8 @@ export const roster = sqliteTable("roster", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   handicap: integer("handicap").notNull().default(18),
+  pin: text("pin"),
+  statsPublic: integer("stats_public").notNull().default(0),
 });
 
 export type RosterPlayer = typeof roster.$inferSelect;

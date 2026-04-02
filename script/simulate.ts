@@ -135,7 +135,10 @@ function computeSpecialBets(allScores: Score[], players: Player[], ldBet: number
 // --- Simulation ---
 
 const NAMES = ["Dimitar","Ivan","Georgi","Nikolay","Stefan","Petar","Martin","Hristo","Todor","Angel",
-  "Boris","Viktor","Emil","Plamen","Krasimir","Boyan","Yavor","Tihomir","Svetoslav","Lyubomir"];
+  "Boris","Viktor","Emil","Plamen","Krasimir","Boyan","Yavor","Tihomir","Svetoslav","Lyubomir",
+  "Vasil","Rosen","Dragomir","Zhivko","Momchil","Stanislav","Dobrin","Atanas","Kiril","Radoslav",
+  "Milen","Chavdar","Bogdan","Yordan","Kostadin","Evgeni","Simeon","Vladimir","Aleksandar","Ognyan",
+  "Tsvetan","Boyko","Lyudmil","Zahari","Valentin","Deyan","Asen","Zdravko","Spas","Galin"];
 
 let nextId = 1;
 
@@ -363,14 +366,14 @@ console.log("\n--- Test 3: 2-way tie split ---");
   console.log(`  2-way tie split - OK`);
 }
 
-// Test 4: 20 players max
-console.log("\n--- Test 4: 20 players ---");
+// Test 4: 50 players max
+console.log("\n--- Test 4: 50 players ---");
 {
   const course = COURSES[2]; // Thracian Cliffs
-  const players = generatePlayers(20, nextId);
+  const players = generatePlayers(50, nextId);
   const scores = generateScores(players, course, nextId, true);
-  verifySettlement("20 players", players, scores, course, BETS);
-  console.log(`  20 players - OK`);
+  verifySettlement("50 players", players, scores, course, BETS);
+  console.log(`  50 players - OK`);
 }
 
 // Test 5: 2 players minimum
@@ -420,16 +423,16 @@ console.log("\n--- Test 7: Handicap strokes ---");
   console.log(`  Handicap strokes - OK`);
 }
 
-// Test 8: Stress test - 100 random games
-console.log("\n--- Test 8: Stress test (100 random games) ---");
+// Test 8: Stress test - 100 random games (2-50 players)
+console.log("\n--- Test 8: Stress test (100 random games, 2-50 players) ---");
 for (let i = 0; i < 100; i++) {
   const course = COURSES[i % COURSES.length];
-  const n = Math.floor(Math.random() * 19) + 2; // 2-20
+  const n = Math.floor(Math.random() * 49) + 2; // 2-50
   const players = generatePlayers(n, nextId);
   const scores = generateScores(players, course, nextId, Math.random() > 0.5);
   verifySettlement(`stress-${i}`, players, scores, course, BETS);
 }
-console.log(`  100 random games - OK`);
+console.log(`  100 random games (2-50 players) - OK`);
 
 // Summary
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);

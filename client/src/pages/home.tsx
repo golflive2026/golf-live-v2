@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getCourse, type Game } from "@shared/schema";
-import { Plus, LogIn, Flag, History, MapPin, Zap, Settings2, ChevronDown, Trash2 } from "lucide-react";
+import { Plus, LogIn, Flag, History, MapPin, Zap, Settings2, ChevronDown, Trash2, Users } from "lucide-react";
 
 export default function Home() {
   const [, navigate] = useLocation();
@@ -91,6 +91,14 @@ export default function Home() {
               Advanced Game
             </Button>
             <p className="text-[10px] text-muted-foreground text-center">Choose course · Roster · Custom bets</p>
+            <Button
+              variant="outline"
+              className="w-full h-10 font-medium text-sm"
+              onClick={() => navigate("/roster")}
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Manage Roster
+            </Button>
           </CardContent>
         </Card>
 

@@ -8,6 +8,8 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Setup from "@/pages/setup";
 import GamePage from "@/pages/game";
+import Roster from "@/pages/roster";
+import StatsPage from "@/pages/stats";
 
 function AppRouter() {
   return (
@@ -15,6 +17,8 @@ function AppRouter() {
       <Route path="/" component={Home} />
       <Route path="/setup/:mode?" component={Setup} />
       <Route path="/game/:id" component={GamePage} />
+      <Route path="/roster" component={Roster} />
+      <Route path="/stats/:rosterId" component={StatsPage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type CourseData, type Game, type Player, type Score } from "@shared/schema";
 import { computeLeaderboard, computeSettlement } from "@/lib/golf";
+import ClaimProfile from "@/components/claim-profile";
 import { Receipt, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 
 interface Props { game: Game; players: Player[]; scores: Score[]; course: CourseData; }
@@ -36,6 +37,10 @@ export default function Settlement({ game, players, scores, course }: Props) {
               <div className="flex items-center gap-2">
                 {s.grandTotal > 0 ? <TrendingUp className="w-4 h-4 text-green-500" /> : s.grandTotal < 0 ? <TrendingDown className="w-4 h-4 text-red-500" /> : null}
                 <span className="font-bold text-sm">{s.playerName}</span>
+                {game.status === "finished" && (() => {
+                  const p = players.find(pl => pl.id === s.playerId);
+                  return p ? <ClaimProfile player={p} gameId={game.id} /> : null;
+                })()}
               </div>
               <MoneyDisplay amount={s.grandTotal} size="lg" />
             </div>

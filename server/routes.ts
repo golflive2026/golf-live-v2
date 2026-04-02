@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { COURSE_LIST } from "@shared/schema";
+import { COURSE_LIST, getCourse } from "@shared/schema";
+import { computeLeaderboard, computeSettlement } from "@shared/golf";
 
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -88,11 +89,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!game) return res.status(404).json({ error: "Game not found" });
       const existingPlayers = storage.getPlayersByGame(gameId);
       if (existingPlayers.length >= 50) return res.status(400).json({ error: "Maximum 50 players" });
-      const { name, handicap } = req.body;
+      const { name, handicap, rosterId } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
-      const player = storage.createPlayer({ gameId, name, handicap: handicap ?? 0 });
-      // Auto-save to roster
-      try { storage.upsertRoster(name, handicap ?? 0); } catch (e) {}
+      // Auto-save to roster and capture rosterId if not provided
+      let linkedRosterId = rosterId ?? null;
+      try {
+        const rosterEntry = storage.upsertRoster(name, handicap ?? 0);
+        if (!linkedRosterId) linkedRosterId = rosterEntry.id;
+      } catch (e) {}
+      const player = storage.createPlayer({ gameId, name, handicap: handicap ?? 0, rosterId: linkedRosterId });
       res.json(player);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -154,6 +159,156 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/roster/:id", (req, res) => {
     storage.deleteRosterPlayer(Number(req.params.id));
     res.json({ ok: true });
+  });
+
+  // Get single roster player (public info only — no pin)
+  app.get("/api/roster/:id", (req, res) => {
+    const rp = storage.getRosterPlayer(Number(req.params.id));
+    if (!rp) return res.status(404).json({ error: "Player not found" });
+    const { pin, ...safe } = rp;
+    res.json({ ...safe, hasPin: !!pin });
+  });
+
+  // Claim profile: link a game-player to a roster entry and set PIN
+  app.post("/api/roster/:id/claim", (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Roster player not found" });
+      const { pin, playerId } = req.body;
+      if (!pin || typeof pin !== "string" || !/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+      }
+      // If already has a PIN, reject — use verify-pin first
+      if (rp.pin) {
+        return res.status(409).json({ error: "Profile already claimed. Use PIN to verify." });
+      }
+      // Set the PIN
+      storage.updateRosterPlayer(rosterId, { pin });
+      // Link the game-player if provided
+      if (playerId) {
+        storage.updatePlayer(Number(playerId), { rosterId });
+      }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Verify PIN and optionally link a game-player
+  app.post("/api/roster/:id/verify-pin", (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Roster player not found" });
+      const { pin, playerId } = req.body;
+      if (!rp.pin) return res.status(400).json({ error: "No PIN set for this player" });
+      const valid = rp.pin === pin;
+      if (valid && playerId) {
+        storage.updatePlayer(Number(playerId), { rosterId });
+      }
+      res.json({ valid });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Toggle stats public/private (requires PIN)
+  app.post("/api/roster/:id/toggle-public", (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Roster player not found" });
+      const { pin } = req.body;
+      if (!rp.pin || rp.pin !== pin) return res.status(403).json({ error: "Invalid PIN" });
+      const newValue = rp.statsPublic ? 0 : 1;
+      storage.updateRosterPlayer(rosterId, { statsPublic: newValue });
+      res.json({ statsPublic: newValue });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Get player stats across all games (requires PIN or public)
+  app.get("/api/roster/:id/stats", (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Roster player not found" });
+      // Privacy check — PIN in query param or stats must be public
+      const pin = req.query.pin as string | undefined;
+      if (!rp.statsPublic && (!pin || pin !== rp.pin)) {
+        return res.status(403).json({ error: "Stats are private. PIN required.", hasPin: !!rp.pin });
+      }
+      // Gather all game-player records linked to this roster ID
+      const linkedPlayers = storage.getPlayersByRosterId(rosterId);
+      const gameHistory = linkedPlayers.map(p => {
+        const game = storage.getGame(p.gameId);
+        if (!game) return null;
+        const course = getCourse(game.courseId);
+        const allPlayers = storage.getPlayersByGame(game.id);
+        const allScores = storage.getScoresByGame(game.id);
+        const playerScores = allScores.filter(s => s.playerId === p.id);
+        // Compute this player's settlement
+        const entries = computeLeaderboard(allPlayers, allScores, course);
+        const settlement = computeSettlement(entries, allScores, allPlayers, game, course);
+        const mySettlement = settlement.find(s => s.playerId === p.id);
+        const myEntry = entries.find(e => e.player.id === p.id);
+        // Score stats
+        let grossTotal = 0, holesPlayed = 0, birdies = 0, eagles = 0;
+        for (const s of playerScores) {
+          if (s.grossScore != null) {
+            grossTotal += s.grossScore;
+            holesPlayed++;
+            const par = course.holePars[s.hole - 1];
+            if (s.grossScore <= par - 2) eagles++;
+            else if (s.grossScore === par - 1) birdies++;
+          }
+        }
+        return {
+          gameId: game.id,
+          gameName: game.name,
+          gameDate: game.date,
+          courseId: game.courseId,
+          courseName: course.name,
+          gameStatus: game.status,
+          handicap: p.handicap,
+          holesPlayed,
+          grossTotal,
+          netTotal: myEntry?.netTotal ?? 0,
+          birdies,
+          eagles,
+          moneyWon: mySettlement?.grandTotal ?? 0,
+          matchPlay: mySettlement?.matchPlay ?? 0,
+          birdieWinnings: mySettlement?.birdies ?? 0,
+          eagleWinnings: mySettlement?.eagles ?? 0,
+          specialBets: mySettlement?.specialBets ?? 0,
+          totalPlayers: allPlayers.length,
+          position: myEntry ? entries.indexOf(myEntry) + 1 : 0,
+        };
+      }).filter(Boolean);
+      // Aggregate stats
+      const finished = gameHistory.filter(g => g!.gameStatus === "finished");
+      const totalMoney = finished.reduce((sum, g) => sum + g!.moneyWon, 0);
+      const avgGross = finished.length > 0
+        ? finished.filter(g => g!.holesPlayed === 18).reduce((sum, g) => sum + g!.grossTotal, 0) / (finished.filter(g => g!.holesPlayed === 18).length || 1)
+        : 0;
+      const avgNet = finished.length > 0
+        ? finished.filter(g => g!.holesPlayed === 18).reduce((sum, g) => sum + g!.netTotal, 0) / (finished.filter(g => g!.holesPlayed === 18).length || 1)
+        : 0;
+      const totalBirdies = gameHistory.reduce((sum, g) => sum + g!.birdies, 0);
+      const totalEagles = gameHistory.reduce((sum, g) => sum + g!.eagles, 0);
+      const wins = finished.filter(g => g!.position === 1).length;
+      res.json({
+        rosterId,
+        name: rp.name,
+        handicap: rp.handicap,
+        statsPublic: !!rp.statsPublic,
+        gamesPlayed: gameHistory.length,
+        gamesFinished: finished.length,
+        totalMoney,
+        avgGross: Math.round(avgGross * 10) / 10,
+        avgNet: Math.round(avgNet * 10) / 10,
+        totalBirdies,
+        totalEagles,
+        wins,
+        gameHistory,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   return httpServer;

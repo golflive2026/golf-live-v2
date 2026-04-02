@@ -10,6 +10,7 @@ import Bets from "@/components/bets";
 import Settlement from "@/components/settlement";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import ManagePlayers from "@/components/manage-players";
 import { ClipboardCopy, Flag, Trophy, DollarSign, Receipt, Share2, Users, Clock, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -121,6 +122,9 @@ export default function GamePage() {
             <p className="text-xs text-muted-foreground">{course.name} · {game.date} · {players.length} players</p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            {game.status === "active" && (
+              <ManagePlayers gameId={game.id} players={players} />
+            )}
             <Button
               variant="ghost"
               size="icon"
