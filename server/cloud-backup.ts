@@ -43,28 +43,40 @@ async function githubApi(path: string, options: RequestInit = {}): Promise<any> 
 }
 
 /** Ensure the data-backup branch exists */
+let branchVerified = false;
 async function ensureBranch(): Promise<void> {
-  try {
-    await githubApi(`/repos/${REPO}/git/ref/heads/${BRANCH}`);
-    return; // Branch exists
-  } catch {
-    // Branch doesn't exist — create from main
+  if (branchVerified) return;
+
+  // Check if branch exists
+  const checkRes = await fetch(`https://api.github.com/repos/${REPO}/git/ref/heads/${BRANCH}`, {
+    headers: {
+      "Authorization": `Bearer ${getToken()}`,
+      "Accept": "application/vnd.github+json",
+    },
+  });
+
+  if (checkRes.ok) {
+    branchVerified = true;
+    return;
   }
 
-  try {
-    const main = await githubApi(`/repos/${REPO}/git/ref/heads/main`);
-    await githubApi(`/repos/${REPO}/git/refs`, {
-      method: "POST",
-      body: JSON.stringify({
-        ref: `refs/heads/${BRANCH}`,
-        sha: main.object.sha,
-      }),
-    });
-    console.log(`[CLOUD-BACKUP] Created branch: ${BRANCH}`);
-  } catch (e: any) {
-    console.error(`[CLOUD-BACKUP] Failed to create branch: ${e.message}`);
-    throw e;
+  if (checkRes.status !== 404) {
+    const text = await checkRes.text();
+    throw new Error(`Branch check failed (${checkRes.status}): ${text.slice(0, 200)}`);
   }
+
+  // Branch doesn't exist — create from main
+  console.log(`[CLOUD-BACKUP] Creating branch: ${BRANCH}`);
+  const main = await githubApi(`/repos/${REPO}/git/ref/heads/main`);
+  await githubApi(`/repos/${REPO}/git/refs`, {
+    method: "POST",
+    body: JSON.stringify({
+      ref: `refs/heads/${BRANCH}`,
+      sha: main.object.sha,
+    }),
+  });
+  branchVerified = true;
+  console.log(`[CLOUD-BACKUP] Branch created: ${BRANCH}`);
 }
 
 /** Get the SHA of the existing backup file (needed for updates) */

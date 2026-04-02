@@ -140,54 +140,56 @@ function restoreFromBackup(backup: any, source: string): number {
   return count;
 }
 
-if (gameCount > 0) {
-  console.log(`[STORAGE] Database has ${gameCount} games — no restore needed`);
-} else {
-  console.warn(`[STORAGE] Database is empty — starting restore chain...`);
-  let restored = false;
+// === RESTORE CHAIN: runs BEFORE server starts accepting traffic ===
+// Export a promise that index.ts MUST await before listening
+async function runRestoreChain(): Promise<void> {
+  if (gameCount > 0) {
+    console.log(`[STORAGE] Database has ${gameCount} games — no restore needed`);
+    return;
+  }
 
-  // Step 1: Try local JSON backup
-  if (!restored && existsSync(backupPath)) {
-    console.log(`[STORAGE] Trying local backup: ${backupPath}`);
+  console.warn(`[STORAGE] Database is EMPTY — starting restore chain...`);
+
+  // Step 1: Try local JSON backup (sync, instant)
+  if (existsSync(backupPath)) {
+    console.log(`[STORAGE] Step 1: Trying local backup: ${backupPath}`);
     try {
       const backup = JSON.parse(readFileSync(backupPath, "utf-8"));
       if (backup.games?.length > 0) {
         restoreFromBackup(backup, "local JSON backup");
-        restored = true;
+        return;
       }
     } catch (e) {
-      console.error(`[STORAGE] Local backup restore failed:`, e);
+      console.error(`[STORAGE] Local backup failed:`, e);
     }
   }
 
-  // Step 2: Try cloud backup (GitHub Gist) — async, run at startup
-  if (!restored && isCloudBackupEnabled()) {
-    console.log(`[STORAGE] Trying cloud backup (GitHub Gist)...`);
-    // We need to do this synchronously at startup — use a flag and restore when ready
-    pullFromCloud().then((backup) => {
+  // Step 2: Try cloud backup (AWAIT — blocks until complete)
+  if (isCloudBackupEnabled()) {
+    console.log(`[STORAGE] Step 2: Fetching cloud backup from GitHub...`);
+    try {
+      const backup = await pullFromCloud();
       if (backup && backup.games?.length > 0) {
-        const currentCount = (sqlite.prepare("SELECT COUNT(*) as count FROM games").get() as any)?.count ?? 0;
-        if (currentCount === 0) {
-          restoreFromBackup(backup, "GitHub Gist cloud backup");
-        }
-      } else {
-        console.log(`[STORAGE] No cloud backup available`);
+        restoreFromBackup(backup, "GitHub cloud backup");
+        return;
       }
-    }).catch(e => {
+      console.log(`[STORAGE] No cloud backup data found`);
+    } catch (e) {
       console.error(`[STORAGE] Cloud restore failed:`, e);
-    });
+    }
   }
 
-  if (!restored) {
-    console.warn(`[STORAGE] No backup found — starting fresh`);
-    if (!isCloudBackupEnabled()) {
-      console.warn(`[STORAGE] TIP: Set GITHUB_BACKUP_TOKEN env var to enable cloud backup`);
-    }
+  console.warn(`[STORAGE] No backup found — starting fresh`);
+  if (!isCloudBackupEnabled()) {
+    console.warn(`[STORAGE] SET GITHUB_BACKUP_TOKEN env var to enable cloud backup!`);
   }
 }
 
-console.log(`[STORAGE] Cloud backup: ${isCloudBackupEnabled() ? "ENABLED" : "DISABLED (set GITHUB_BACKUP_TOKEN)"}`);
-console.log(`[STORAGE] ===== STARTUP COMPLETE =====`);
+// This promise MUST be awaited by index.ts before serving traffic
+export const storageReady: Promise<void> = runRestoreChain().then(() => {
+  console.log(`[STORAGE] Cloud backup: ${isCloudBackupEnabled() ? "ENABLED" : "DISABLED"}`);
+  console.log(`[STORAGE] ===== STARTUP COMPLETE =====`);
+});
 
 // === STATUS tracking ===
 let lastBackupTime: string | null = null;
@@ -211,33 +213,41 @@ export function getStorageStatus() {
   };
 }
 
-// === AUTO-BACKUP: local JSON + cloud Gist after mutations ===
-let backupTimer: ReturnType<typeof setTimeout> | null = null;
+// === AUTO-BACKUP: local JSON (debounced) + cloud (debounced separately) ===
+let localBackupTimer: ReturnType<typeof setTimeout> | null = null;
+let cloudBackupTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function scheduleBackup() {
-  // Debounce: backup at most once per 10 seconds
-  if (backupTimer) clearTimeout(backupTimer);
-  backupTimer = setTimeout(() => {
+  // Local JSON backup: debounce 3 seconds (fast, sync)
+  if (localBackupTimer) clearTimeout(localBackupTimer);
+  localBackupTimer = setTimeout(() => {
     try {
       const data = exportAllData();
-
-      // 1. Local JSON backup (sync, instant)
       writeFileSync(backupPath, JSON.stringify(data), "utf-8");
       lastBackupTime = new Date().toISOString();
+    } catch (e) {
+      console.error("[STORAGE] Local backup failed:", e);
+    }
+  }, 3000);
 
-      // 2. Cloud backup (async, non-blocking)
-      if (isCloudBackupEnabled()) {
+  // Cloud backup: debounce 15 seconds (network call, rate limited)
+  if (isCloudBackupEnabled()) {
+    if (cloudBackupTimer) clearTimeout(cloudBackupTimer);
+    cloudBackupTimer = setTimeout(() => {
+      try {
+        const data = exportAllData();
         pushToCloud(data).then(ok => {
           lastCloudBackupTime = new Date().toISOString();
           lastCloudBackupOk = ok;
+          if (ok) console.log("[STORAGE] Cloud backup synced");
         }).catch(() => {
           lastCloudBackupOk = false;
         });
+      } catch (e) {
+        console.error("[STORAGE] Cloud backup failed:", e);
       }
-    } catch (e) {
-      console.error("[STORAGE] Backup failed:", e);
-    }
-  }, 10000);
+    }, 15000);
+  }
 }
 
 export function exportAllData() {
@@ -421,29 +431,52 @@ export class DatabaseStorage implements IStorage {
 
 export const storage = new DatabaseStorage();
 
-// Graceful shutdown: flush local + cloud backup, then close SQLite
-async function closeDb() {
-  try {
-    if (backupTimer) clearTimeout(backupTimer);
-    const data = exportAllData();
+// Graceful shutdown: MUST complete backup before process exits
+// Using explicit process.exit() after async work to prevent premature exit
+function shutdownHandler(signal: string) {
+  console.log(`[STORAGE] ${signal} received — starting graceful shutdown...`);
 
-    // 1. Local backup (sync)
+  // Cancel pending timers
+  if (localBackupTimer) clearTimeout(localBackupTimer);
+  if (cloudBackupTimer) clearTimeout(cloudBackupTimer);
+
+  const data = exportAllData();
+
+  // 1. Local backup (sync — guaranteed to complete)
+  try {
     writeFileSync(backupPath, JSON.stringify(data), "utf-8");
     console.log("[STORAGE] Final local backup saved");
-
-    // 2. Cloud backup (await — this is our last chance before container dies)
-    if (isCloudBackupEnabled()) {
-      console.log("[STORAGE] Pushing final cloud backup...");
-      const ok = await pushToCloud(data);
-      console.log(`[STORAGE] Cloud backup: ${ok ? "SUCCESS" : "FAILED"}`);
-    }
-
-    sqlite.close();
-    console.log("[STORAGE] Database closed cleanly");
   } catch (e) {
-    console.error("[STORAGE] Shutdown error:", e);
+    console.error("[STORAGE] Local backup failed:", e);
   }
-  process.exit(0);
+
+  // 2. Cloud backup (async — must await before exit)
+  if (isCloudBackupEnabled()) {
+    console.log("[STORAGE] Pushing final cloud backup...");
+    pushToCloud(data)
+      .then(ok => {
+        console.log(`[STORAGE] Final cloud backup: ${ok ? "SUCCESS" : "FAILED"}`);
+      })
+      .catch(e => {
+        console.error("[STORAGE] Final cloud backup error:", e);
+      })
+      .finally(() => {
+        try { sqlite.close(); } catch {}
+        console.log("[STORAGE] Shutdown complete");
+        process.exit(0);
+      });
+
+    // Safety: force exit after 8 seconds if cloud push hangs
+    setTimeout(() => {
+      console.warn("[STORAGE] Shutdown timeout — forcing exit");
+      try { sqlite.close(); } catch {}
+      process.exit(1);
+    }, 8000);
+  } else {
+    try { sqlite.close(); } catch {}
+    console.log("[STORAGE] Shutdown complete (no cloud backup)");
+    process.exit(0);
+  }
 }
-process.on("SIGTERM", () => { closeDb(); });
-process.on("SIGINT", () => { closeDb(); });
+process.on("SIGTERM", () => shutdownHandler("SIGTERM"));
+process.on("SIGINT", () => shutdownHandler("SIGINT"));

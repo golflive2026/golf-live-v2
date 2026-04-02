@@ -85,10 +85,12 @@ export default function GamePage() {
   };
 
   const finishGame = async () => {
+    if (!confirm("Finish this game? Scores will be locked.")) return;
     try {
       await apiRequest("POST", `/api/games/${game.id}/finish`);
       await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
-      toast({ title: "Game finished!" });
+      setTab("settlement");
+      toast({ title: "Game finished!", description: "View settlement and tap Stats to see your profile." });
     } catch (e) {
       console.error("Finish failed", e);
     }

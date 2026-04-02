@@ -54,7 +54,6 @@ export default function Setup() {
       const res = await apiRequest("GET", "/api/roster");
       return res.json();
     },
-    enabled: isAdvanced,
   });
 
   const addPlayer = () => {
@@ -287,7 +286,7 @@ export default function Setup() {
                 </Button>
               </div>
 
-              {isAdvanced && rosterPlayers && rosterPlayers.length > 0 && (
+              {rosterPlayers && rosterPlayers.length > 0 && (
                 <div className="border-t border-border pt-4">
                   <div className="flex items-center gap-2 mb-2">
                     <UserPlus className="w-4 h-4 text-muted-foreground" />

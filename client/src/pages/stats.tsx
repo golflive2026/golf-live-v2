@@ -90,6 +90,9 @@ export default function StatsPage() {
   const [enteredPin, setEnteredPin] = useState<string | null>(null);
   const [pinError, setPinError] = useState("");
   const [toggling, setToggling] = useState(false);
+  const [showSetPin, setShowSetPin] = useState(false);
+  const [newPin, setNewPin] = useState("");
+  const [settingPin, setSettingPin] = useState(false);
   const { toast } = useToast();
 
   const togglePublic = async () => {
@@ -105,6 +108,23 @@ export default function StatsPage() {
       toast({ title: "Failed to toggle", variant: "destructive" });
     } finally {
       setToggling(false);
+    }
+  };
+
+  const handleSetPin = async () => {
+    if (newPin.length !== 4) return;
+    setSettingPin(true);
+    try {
+      await apiRequest("POST", `/api/roster/${rosterId}/set-pin`, { pin: newPin });
+      await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId] });
+      setEnteredPin(newPin);
+      setShowSetPin(false);
+      setNewPin("");
+      toast({ title: "PIN set!", description: "Your stats are now private. Use the toggle to make them public." });
+    } catch {
+      toast({ title: "Failed to set PIN", variant: "destructive" });
+    } finally {
+      setSettingPin(false);
     }
   };
 
@@ -285,19 +305,65 @@ export default function StatsPage() {
               <p className="text-xs text-muted-foreground">HCP {stats.handicap} · {stats.gamesFinished} games finished</p>
             </div>
           </div>
-          {enteredPin && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1.5"
-              onClick={togglePublic}
-              disabled={toggling}
-            >
-              {stats.statsPublic ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-              {stats.statsPublic ? "Public" : "Private"}
-            </Button>
-          )}
+          <div className="flex gap-1.5">
+            {/* Show Set PIN if no PIN, or privacy toggle if authenticated */}
+            {rosterInfo && !rosterInfo.hasPin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={() => { setShowSetPin(true); setNewPin(""); }}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                Set PIN
+              </Button>
+            )}
+            {enteredPin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={togglePublic}
+                disabled={toggling}
+              >
+                {stats.statsPublic ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                {stats.statsPublic ? "Public" : "Private"}
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Set PIN dialog */}
+        {showSetPin && (
+          <Card className="mb-4">
+            <CardContent className="p-4 flex flex-col items-center gap-3">
+              <p className="text-sm font-medium">Create a 4-digit PIN to protect your stats</p>
+              <InputOTP maxLength={4} value={newPin} onChange={setNewPin} pattern="^[0-9]*$">
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                </InputOTPGroup>
+              </InputOTP>
+              <div className="flex gap-2 w-full">
+                <Button variant="secondary" className="flex-1" onClick={() => setShowSetPin(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 golf-gradient text-white border-0"
+                  onClick={handleSetPin}
+                  disabled={newPin.length !== 4 || settingPin}
+                >
+                  {settingPin ? "..." : "Set PIN"}
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground text-center">
+                After setting a PIN, only you can view these stats. You can make them public again anytime.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tab bar */}
         <div className="flex gap-1 mb-4 bg-muted rounded-lg p-1">

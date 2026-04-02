@@ -138,7 +138,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // Roster endpoints
   app.get("/api/roster", (_req, res) => {
-    res.json(storage.listRoster());
+    // Strip PINs from response — never expose PINs to clients
+    const list = storage.listRoster().map(({ pin, ...rest }) => ({ ...rest, hasPin: !!pin }));
+    res.json(list);
   });
 
   app.post("/api/roster", (req, res) => {
@@ -205,6 +207,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         storage.updatePlayer(Number(playerId), { rosterId });
       }
       res.json({ valid });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Set PIN for the first time (from stats page)
+  app.post("/api/roster/:id/set-pin", (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Player not found" });
+      if (rp.pin) return res.status(409).json({ error: "PIN already set. Use verify-pin to change." });
+      const { pin } = req.body;
+      if (!pin || typeof pin !== "string" || !/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+      }
+      storage.updateRosterPlayer(rosterId, { pin });
+      res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

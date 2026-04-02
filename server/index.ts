@@ -60,6 +60,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // CRITICAL: Wait for database restore to complete before serving any traffic
+  const { storageReady } = await import("./storage");
+  await storageReady;
+  log("Database ready — starting server");
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
