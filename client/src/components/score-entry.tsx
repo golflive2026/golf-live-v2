@@ -61,7 +61,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
         hole: currentHole,
         ...data,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
     } catch (e) {
       console.error("Save failed", e);
     } finally {

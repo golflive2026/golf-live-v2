@@ -59,8 +59,8 @@ export default function Setup() {
 
   const addPlayer = () => {
     if (!newName.trim()) return;
-    if (players.length >= 20) {
-      toast({ title: "Max 20 players", variant: "destructive" });
+    if (players.length >= 50) {
+      toast({ title: "Max 50 players", variant: "destructive" });
       return;
     }
     if (players.some(p => p.name.toLowerCase() === newName.trim().toLowerCase())) {
@@ -81,8 +81,8 @@ export default function Setup() {
     if (exists) {
       setPlayers(players.filter(p => p.name.toLowerCase() !== rp.name.toLowerCase()));
     } else {
-      if (players.length >= 20) {
-        toast({ title: "Max 20 players", variant: "destructive" });
+      if (players.length >= 50) {
+        toast({ title: "Max 50 players", variant: "destructive" });
         return;
       }
       setPlayers([...players, { name: rp.name, handicap: rp.handicap }]);
@@ -237,7 +237,7 @@ export default function Setup() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                Players ({players.length}/20)
+                Players ({players.length}/50)
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

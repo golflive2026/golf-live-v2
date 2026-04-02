@@ -11,7 +11,7 @@ import Settlement from "@/components/settlement";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ClipboardCopy, Flag, Trophy, DollarSign, Receipt, Share2, Users, Clock, ArrowLeft, CheckCircle2 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 type Tab = "quick" | "score" | "leaderboard" | "bets" | "settlement";
@@ -85,6 +85,7 @@ export default function GamePage() {
   const finishGame = async () => {
     try {
       await apiRequest("POST", `/api/games/${game.id}/finish`);
+      await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
       toast({ title: "Game finished!" });
     } catch (e) {
       console.error("Finish failed", e);

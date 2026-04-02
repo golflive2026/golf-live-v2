@@ -50,7 +50,7 @@ export default function QuickScore({ game, players, scores, course }: Props) {
         grossScore,
       });
       playScoreSound(grossScore, par);
-      queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
     } catch (e) {
       console.error("Save failed", e);
     }

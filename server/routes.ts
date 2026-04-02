@@ -80,7 +80,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const game = storage.getGame(gameId);
       if (!game) return res.status(404).json({ error: "Game not found" });
       const existingPlayers = storage.getPlayersByGame(gameId);
-      if (existingPlayers.length >= 20) return res.status(400).json({ error: "Maximum 20 players" });
+      if (existingPlayers.length >= 50) return res.status(400).json({ error: "Maximum 50 players" });
       const { name, handicap } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       const player = storage.createPlayer({ gameId, name, handicap: handicap ?? 0 });
