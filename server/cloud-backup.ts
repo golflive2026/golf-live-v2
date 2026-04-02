@@ -1,21 +1,20 @@
 /**
- * Cloud Backup via GitHub Gist
+ * Cloud Backup via GitHub Repository
  *
- * Persists database backup to a secret GitHub Gist so data survives
- * even when Render's filesystem is wiped on redeploy.
+ * Stores database backup as a file on a `data-backup` branch in the same repo.
+ * This branch does NOT trigger Render redeploys (only main does).
  *
- * Env vars:
- *   GITHUB_BACKUP_TOKEN — GitHub PAT with "gist" scope
+ * Uses the same GitHub token that pushes code — no extra permissions needed.
  *
- * The Gist ID is auto-discovered by searching for a gist named "golf-live-backup".
- * If none exists, one is created automatically on first backup.
+ * Env var: GITHUB_BACKUP_TOKEN — GitHub PAT (same one used for git push)
  */
 
-const GIST_FILENAME = "golf-live-backup.json";
-const GIST_DESCRIPTION = "Golf Live V2 — automatic database backup (do not delete)";
+const REPO = process.env.GITHUB_REPO || "golflive2026/golf-live-v2";
+const BRANCH = "data-backup";
+const FILE_PATH = "backup.json";
 
-let gistId: string | null = null;
-let lastBackupHash: string | null = null;
+let lastPushHash: string | null = null;
+let fileShaCache: string | null = null;
 
 function getToken(): string | null {
   return process.env.GITHUB_BACKUP_TOKEN || null;
@@ -23,66 +22,64 @@ function getToken(): string | null {
 
 async function githubApi(path: string, options: RequestInit = {}): Promise<any> {
   const token = getToken();
-  if (!token) throw new Error("No GITHUB_BACKUP_TOKEN set");
+  if (!token) throw new Error("No GITHUB_BACKUP_TOKEN");
 
   const res = await fetch(`https://api.github.com${path}`, {
     ...options,
     headers: {
       "Authorization": `Bearer ${token}`,
       "Accept": "application/vnd.github+json",
-      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28",
       ...(options.headers || {}),
     },
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`GitHub API ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`GitHub ${res.status}: ${text.slice(0, 300)}`);
   }
 
   return res.json();
 }
 
-/** Find existing backup gist or return null */
-async function findGist(): Promise<string | null> {
-  if (gistId) return gistId;
-
+/** Ensure the data-backup branch exists */
+async function ensureBranch(): Promise<void> {
   try {
-    // Search user's gists for our backup
-    const gists = await githubApi("/gists?per_page=100");
-    for (const g of gists) {
-      if (g.description === GIST_DESCRIPTION || (g.files && g.files[GIST_FILENAME])) {
-        gistId = g.id;
-        console.log(`[CLOUD-BACKUP] Found existing backup gist: ${gistId}`);
-        return gistId;
-      }
-    }
-  } catch (e: any) {
-    console.error(`[CLOUD-BACKUP] Failed to search gists: ${e.message}`);
+    await githubApi(`/repos/${REPO}/git/ref/heads/${BRANCH}`);
+    return; // Branch exists
+  } catch {
+    // Branch doesn't exist — create from main
   }
 
-  return null;
+  try {
+    const main = await githubApi(`/repos/${REPO}/git/ref/heads/main`);
+    await githubApi(`/repos/${REPO}/git/refs`, {
+      method: "POST",
+      body: JSON.stringify({
+        ref: `refs/heads/${BRANCH}`,
+        sha: main.object.sha,
+      }),
+    });
+    console.log(`[CLOUD-BACKUP] Created branch: ${BRANCH}`);
+  } catch (e: any) {
+    console.error(`[CLOUD-BACKUP] Failed to create branch: ${e.message}`);
+    throw e;
+  }
 }
 
-/** Create a new secret gist for backup */
-async function createGist(content: string): Promise<string> {
-  const gist = await githubApi("/gists", {
-    method: "POST",
-    body: JSON.stringify({
-      description: GIST_DESCRIPTION,
-      public: false,
-      files: {
-        [GIST_FILENAME]: { content },
-      },
-    }),
-  });
-
-  gistId = gist.id;
-  console.log(`[CLOUD-BACKUP] Created new backup gist: ${gistId}`);
-  return gistId!;
+/** Get the SHA of the existing backup file (needed for updates) */
+async function getFileSha(): Promise<string | null> {
+  if (fileShaCache) return fileShaCache;
+  try {
+    const file = await githubApi(`/repos/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`);
+    fileShaCache = file.sha;
+    return file.sha;
+  } catch {
+    return null;
+  }
 }
 
-/** Push backup data to GitHub Gist */
+/** Push backup data to GitHub repo */
 export async function pushToCloud(data: any): Promise<boolean> {
   const token = getToken();
   if (!token) return false;
@@ -90,29 +87,31 @@ export async function pushToCloud(data: any): Promise<boolean> {
   try {
     const content = JSON.stringify(data);
 
-    // Simple hash to avoid pushing identical data
+    // Skip if nothing changed
     const hash = simpleHash(content);
-    if (hash === lastBackupHash) return true;
+    if (hash === lastPushHash) return true;
 
-    let id = await findGist();
+    await ensureBranch();
+    const sha = await getFileSha();
 
-    if (id) {
-      // Update existing gist
-      await githubApi(`/gists/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          files: {
-            [GIST_FILENAME]: { content },
-          },
-        }),
-      });
-    } else {
-      // Create new gist
-      id = await createGist(content);
-    }
+    const body: any = {
+      message: `backup ${new Date().toISOString().slice(0, 19)}`,
+      content: Buffer.from(content).toString("base64"),
+      branch: BRANCH,
+    };
+    if (sha) body.sha = sha;
 
-    lastBackupHash = hash;
-    console.log(`[CLOUD-BACKUP] Backup pushed to gist ${id} (${(content.length / 1024).toFixed(1)} KB)`);
+    const result = await githubApi(`/repos/${REPO}/contents/${FILE_PATH}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+
+    // Cache the new SHA for next update
+    fileShaCache = result.content?.sha || null;
+    lastPushHash = hash;
+
+    const kb = (content.length / 1024).toFixed(1);
+    console.log(`[CLOUD-BACKUP] Pushed ${kb} KB to ${REPO}@${BRANCH}`);
     return true;
   } catch (e: any) {
     console.error(`[CLOUD-BACKUP] Push failed: ${e.message}`);
@@ -120,30 +119,26 @@ export async function pushToCloud(data: any): Promise<boolean> {
   }
 }
 
-/** Fetch backup data from GitHub Gist */
+/** Fetch backup data from GitHub repo */
 export async function pullFromCloud(): Promise<any | null> {
   const token = getToken();
   if (!token) {
-    console.log("[CLOUD-BACKUP] No GITHUB_BACKUP_TOKEN set — skipping cloud restore");
+    console.log("[CLOUD-BACKUP] No GITHUB_BACKUP_TOKEN — skipping cloud restore");
     return null;
   }
 
   try {
-    const id = await findGist();
-    if (!id) {
-      console.log("[CLOUD-BACKUP] No backup gist found");
-      return null;
-    }
-
-    const gist = await githubApi(`/gists/${id}`);
-    const file = gist.files?.[GIST_FILENAME];
+    const file = await githubApi(`/repos/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`);
     if (!file || !file.content) {
-      console.log("[CLOUD-BACKUP] Gist found but no backup content");
+      console.log("[CLOUD-BACKUP] No backup file found on data-backup branch");
       return null;
     }
 
-    const data = JSON.parse(file.content);
-    console.log(`[CLOUD-BACKUP] Fetched backup from gist ${id} (${(file.content.length / 1024).toFixed(1)} KB)`);
+    fileShaCache = file.sha;
+    const content = Buffer.from(file.content, "base64").toString("utf-8");
+    const data = JSON.parse(content);
+    const kb = (content.length / 1024).toFixed(1);
+    console.log(`[CLOUD-BACKUP] Fetched ${kb} KB backup from ${REPO}@${BRANCH}`);
     return data;
   } catch (e: any) {
     console.error(`[CLOUD-BACKUP] Pull failed: ${e.message}`);
@@ -159,9 +154,8 @@ export function isCloudBackupEnabled(): boolean {
 function simpleHash(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash = hash & hash;
   }
   return hash.toString(36);
 }
