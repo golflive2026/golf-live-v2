@@ -1,35 +1,70 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useRoute } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { DEFAULT_BETS } from "@shared/schema";
-import { ArrowLeft, Plus, Trash2, Play, DollarSign, Users } from "lucide-react";
+import { DEFAULT_BETS, type RosterPlayer } from "@shared/schema";
+import { ArrowLeft, Plus, Trash2, Play, DollarSign, Users, MapPin, UserPlus } from "lucide-react";
 
 interface PlayerInput {
   name: string;
   handicap: number;
 }
 
+interface CourseOption {
+  id: string;
+  name: string;
+  location: string;
+  totalPar: number;
+}
+
 export default function Setup() {
+  const [, params] = useRoute("/setup/:mode?");
+  const isAdvanced = params?.mode === "advanced";
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [step, setStep] = useState<"info" | "players" | "bets">("info");
-  const [gameName, setGameName] = useState("");
+  const [step, setStep] = useState<"info" | "players" | "bets">(isAdvanced ? "info" : "players");
+  const [gameName, setGameName] = useState(isAdvanced ? "" : "St. Sofia Round");
   const [gameDate, setGameDate] = useState(new Date().toISOString().split("T")[0]);
+  const [courseId, setCourseId] = useState("st-sofia");
   const [players, setPlayers] = useState<PlayerInput[]>([]);
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("18");
   const [bets, setBets] = useState({ ...DEFAULT_BETS });
   const [creating, setCreating] = useState(false);
 
+  const { data: courses } = useQuery<CourseOption[]>({
+    queryKey: ["/api/courses"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/courses");
+      return res.json();
+    },
+    enabled: isAdvanced,
+  });
+
+  const { data: rosterPlayers } = useQuery<RosterPlayer[]>({
+    queryKey: ["/api/roster"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/roster");
+      return res.json();
+    },
+    enabled: isAdvanced,
+  });
+
   const addPlayer = () => {
     if (!newName.trim()) return;
     if (players.length >= 20) {
       toast({ title: "Max 20 players", variant: "destructive" });
+      return;
+    }
+    if (players.some(p => p.name.toLowerCase() === newName.trim().toLowerCase())) {
+      toast({ title: "Player already added", variant: "destructive" });
       return;
     }
     setPlayers([...players, { name: newName.trim(), handicap: parseInt(newHcp) || 0 }]);
@@ -41,6 +76,19 @@ export default function Setup() {
     setPlayers(players.filter((_, i) => i !== idx));
   };
 
+  const toggleRosterPlayer = (rp: RosterPlayer) => {
+    const exists = players.some(p => p.name.toLowerCase() === rp.name.toLowerCase());
+    if (exists) {
+      setPlayers(players.filter(p => p.name.toLowerCase() !== rp.name.toLowerCase()));
+    } else {
+      if (players.length >= 20) {
+        toast({ title: "Max 20 players", variant: "destructive" });
+        return;
+      }
+      setPlayers([...players, { name: rp.name, handicap: rp.handicap }]);
+    }
+  };
+
   const startGame = async () => {
     if (players.length < 2) {
       toast({ title: "Need at least 2 players", variant: "destructive" });
@@ -48,10 +96,10 @@ export default function Setup() {
     }
     setCreating(true);
     try {
-      // Create game
       const gameRes = await apiRequest("POST", "/api/games", {
         name: gameName || "Golf Game",
         date: gameDate,
+        courseId,
         first9Bet: bets.first9Bet,
         second9Bet: bets.second9Bet,
         wholeGameBet: bets.wholeGameBet,
@@ -62,7 +110,6 @@ export default function Setup() {
       });
       const game = await gameRes.json();
 
-      // Add all players
       let addedCount = 0;
       for (const p of players) {
         await apiRequest("POST", `/api/games/${game.id}/players`, {
@@ -72,12 +119,10 @@ export default function Setup() {
         addedCount++;
       }
 
-      // Only start the game if all players were added
       if (addedCount !== players.length) {
         throw new Error("Not all players were added. Please try again.");
       }
 
-      // Start the game
       await apiRequest("POST", `/api/games/${game.id}/start`);
 
       toast({ title: "Game created!", description: `Code: ${game.code}` });
@@ -89,42 +134,47 @@ export default function Setup() {
     }
   };
 
+  const selectedCourse = courses?.find(c => c.id === courseId);
+
   const betFields = [
-    { key: "first9Bet", label: "Front 9", unit: "€" },
-    { key: "second9Bet", label: "Back 9", unit: "€" },
-    { key: "wholeGameBet", label: "Full Round", unit: "€" },
-    { key: "birdiePot", label: "Birdie Pot", unit: "€" },
-    { key: "eaglePot", label: "Eagle Pot", unit: "€" },
-    { key: "longestDriveBet", label: "Longest Drive", unit: "€" },
-    { key: "closestPinBet", label: "Closest to Pin", unit: "€" },
+    { key: "first9Bet", label: "Front 9" },
+    { key: "second9Bet", label: "Back 9" },
+    { key: "wholeGameBet", label: "Full Round" },
+    { key: "birdiePot", label: "Birdie Pot" },
+    { key: "eaglePot", label: "Eagle Pot" },
+    { key: "longestDriveBet", label: "Longest Drive" },
+    { key: "closestPinBet", label: "Closest to Pin" },
   ] as const;
+
+  const availableRoster = rosterPlayers?.filter(
+    rp => !players.some(p => p.name.toLowerCase() === rp.name.toLowerCase())
+  ) || [];
 
   return (
     <div className="min-h-screen bg-background px-4 py-6 pb-24">
       <div className="max-w-lg mx-auto">
-        {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Button variant="ghost" size="icon" onClick={() => navigate("/")} data-testid="button-back">
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <h1 className="text-lg font-bold">New Game</h1>
+          <h1 className="text-lg font-bold">{isAdvanced ? "Advanced Game" : "Quick Game"}</h1>
         </div>
 
-        {/* Step indicator */}
         <div className="flex gap-2 mb-6">
-          {["info", "players", "bets"].map((s, i) => (
+          {(isAdvanced ? ["info", "players", "bets"] : ["players", "bets"]).map((s) => (
             <div
               key={s}
               className={`h-1.5 flex-1 rounded-full transition-colors ${
-                (s === "info" && step === "info") || (s === "players" && (step === "players" || step === "bets")) || (s === "bets" && step === "bets")
+                (s === "info" && step === "info") ||
+                (s === "players" && (step === "players" || step === "bets")) ||
+                (s === "bets" && step === "bets")
                   ? "bg-primary" : "bg-muted"
               }`}
             />
           ))}
         </div>
 
-        {/* Step 1: Game Info */}
-        {step === "info" && (
+        {step === "info" && isAdvanced && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Game Details</CardTitle>
@@ -150,6 +200,27 @@ export default function Setup() {
                   className="h-12 mt-1"
                 />
               </div>
+              <div>
+                <Label className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Course
+                </Label>
+                <Select value={courseId} onValueChange={setCourseId}>
+                  <SelectTrigger className="h-12 mt-1" data-testid="select-course">
+                    <SelectValue placeholder="Select course" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses?.map(c => (
+                      <SelectItem key={c.id} value={c.id} data-testid={`option-course-${c.id}`}>
+                        {c.name} (Par {c.totalPar})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedCourse && (
+                  <p className="text-xs text-muted-foreground mt-1">{selectedCourse.location} · Par {selectedCourse.totalPar}</p>
+                )}
+              </div>
               <Button
                 data-testid="button-next-players"
                 className="w-full h-12 font-semibold golf-gradient text-white border-0"
@@ -161,7 +232,6 @@ export default function Setup() {
           </Card>
         )}
 
-        {/* Step 2: Players */}
         {step === "players" && (
           <Card>
             <CardHeader>
@@ -171,7 +241,6 @@ export default function Setup() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Player list */}
               {players.length > 0 && (
                 <div className="space-y-2">
                   {players.map((p, i) => (
@@ -188,7 +257,6 @@ export default function Setup() {
                 </div>
               )}
 
-              {/* Add player form */}
               <div className="flex gap-2">
                 <Input
                   data-testid="input-player-name"
@@ -219,8 +287,36 @@ export default function Setup() {
                 </Button>
               </div>
 
+              {isAdvanced && rosterPlayers && rosterPlayers.length > 0 && (
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <UserPlus className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Quick Add from Roster</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {rosterPlayers.map(rp => {
+                      const selected = players.some(p => p.name.toLowerCase() === rp.name.toLowerCase());
+                      return (
+                        <button
+                          key={rp.id}
+                          onClick={() => toggleRosterPlayer(rp)}
+                          data-testid={`button-roster-${rp.id}`}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                            selected
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          {rp.name} ({rp.handicap})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2">
-                <Button variant="secondary" className="flex-1 h-12" onClick={() => setStep("info")} data-testid="button-back-info">
+                <Button variant="secondary" className="flex-1 h-12" onClick={() => isAdvanced ? setStep("info") : navigate("/")} data-testid="button-back-info">
                   Back
                 </Button>
                 <Button
@@ -236,7 +332,6 @@ export default function Setup() {
           </Card>
         )}
 
-        {/* Step 3: Bets */}
         {step === "bets" && (
           <Card>
             <CardHeader>
@@ -249,18 +344,15 @@ export default function Setup() {
               {betFields.map(f => (
                 <div key={f.key} className="flex items-center justify-between">
                   <Label className="text-sm">{f.label}</Label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-sm text-muted-foreground">{f.unit}</span>
-                    <Input
-                      data-testid={`input-bet-${f.key}`}
-                      type="number"
-                      value={bets[f.key]}
-                      onChange={e => setBets({ ...bets, [f.key]: parseFloat(e.target.value) || 0 })}
-                      className="h-10 w-20 text-center"
-                      min={0}
-                      step={1}
-                    />
-                  </div>
+                  <Input
+                    data-testid={`input-bet-${f.key}`}
+                    type="number"
+                    value={bets[f.key]}
+                    onChange={e => setBets({ ...bets, [f.key]: parseFloat(e.target.value) || 0 })}
+                    className="h-10 w-24 text-center"
+                    min={0}
+                    step={1}
+                  />
                 </div>
               ))}
 

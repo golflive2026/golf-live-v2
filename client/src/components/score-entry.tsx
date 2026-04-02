@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { COURSE, type Game, type Player, type Score } from "@shared/schema";
+import { type CourseData, type Game, type Player, type Score } from "@shared/schema";
 import { getScoreLabel, getStrokesForHole, buildScoresMap } from "@/lib/golf";
+import { playScoreSound } from "@/lib/sounds";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ChevronLeft, ChevronRight, Minus, Plus, Ruler, Target } from "lucide-react";
 
@@ -14,9 +15,10 @@ interface Props {
   scores: Score[];
   selectedPlayerId: number | null;
   onSelectPlayer: (id: number) => void;
+  course: CourseData;
 }
 
-export default function ScoreEntry({ game, players, scores, selectedPlayerId, onSelectPlayer }: Props) {
+export default function ScoreEntry({ game, players, scores, selectedPlayerId, onSelectPlayer, course }: Props) {
   const [currentHole, setCurrentHole] = useState(1);
   const [saving, setSaving] = useState(false);
 
@@ -25,17 +27,16 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
   const playerScores = player ? scoresMap.get(player.id) : undefined;
   const currentScore = playerScores?.get(currentHole);
 
-  const par = COURSE.holePars[currentHole - 1];
-  const hcpIndex = COURSE.holeHcp[currentHole - 1];
-  const strokesReceived = player ? getStrokesForHole(player.handicap, currentHole - 1) : 0;
-  const isLongestDrive = COURSE.longestDriveHoles.includes(currentHole);
-  const isClosestPin = COURSE.par3Holes.includes(currentHole);
+  const par = course.holePars[currentHole - 1];
+  const hcpIndex = course.holeHcp[currentHole - 1];
+  const strokesReceived = player ? getStrokesForHole(player.handicap, currentHole - 1, course) : 0;
+  const isLongestDrive = course.longestDriveHoles.includes(currentHole);
+  const isClosestPin = course.par3Holes.includes(currentHole);
 
   const grossScore = currentScore?.grossScore ?? null;
   const longestDrive = currentScore?.longestDrive ?? null;
   const closestPin = currentScore?.closestPin ?? null;
 
-  // Auto-navigate to first unscored hole when player changes
   useEffect(() => {
     if (!player || !playerScores) {
       setCurrentHole(1);
@@ -48,7 +49,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
         return;
       }
     }
-    // All holes scored, stay on current
   }, [selectedPlayerId]);
 
   const saveScore = useCallback(async (data: { grossScore?: number | null; longestDrive?: number | null; closestPin?: number | null }) => {
@@ -71,6 +71,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
 
   const setGrossScore = (value: number) => {
     if (value < 1) return;
+    playScoreSound(value, par);
     saveScore({ grossScore: value });
   };
 
@@ -80,11 +81,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
 
   return (
     <div className="space-y-4">
-      {/* Player selector */}
-      <Select
-        value={selectedPlayerId?.toString() || ""}
-        onValueChange={v => onSelectPlayer(Number(v))}
-      >
+      <Select value={selectedPlayerId?.toString() || ""} onValueChange={v => onSelectPlayer(Number(v))}>
         <SelectTrigger className="h-12 text-base font-medium" data-testid="select-player">
           <SelectValue placeholder="Select player" />
         </SelectTrigger>
@@ -97,7 +94,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
         </SelectContent>
       </Select>
 
-      {/* Hole navigation strip */}
       <div className="flex gap-1 overflow-x-auto pb-1 -mx-1 px-1">
         {Array.from({ length: 18 }, (_, i) => {
           const h = i + 1;
@@ -109,11 +105,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
               data-testid={`button-hole-${h}`}
               onClick={() => setCurrentHole(h)}
               className={`shrink-0 w-9 h-9 rounded-lg text-xs font-bold transition-all ${
-                active
-                  ? "golf-gradient text-white scale-110"
-                  : scored
-                    ? "bg-primary/15 text-primary"
-                    : "bg-muted text-muted-foreground"
+                active ? "golf-gradient text-white scale-110" : scored ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
               }`}
             >
               {h}
@@ -122,7 +114,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
         })}
       </div>
 
-      {/* Current hole card */}
       <Card className="border-border overflow-hidden">
         <div className="golf-gradient px-4 py-3 flex items-center justify-between">
           <div>
@@ -138,13 +129,10 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
               )}
             </div>
           </div>
-          <div className="text-right text-white/70 text-xs">
-            {holesScored}/18 holes
-          </div>
+          <div className="text-right text-white/70 text-xs">{holesScored}/18 holes</div>
         </div>
 
         <CardContent className="p-5 space-y-5">
-          {/* Score input */}
           <div className="text-center">
             <p className="text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wider">Score</p>
             <div className="flex items-center justify-center gap-4">
@@ -183,7 +171,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
               </Button>
             </div>
 
-            {/* Quick score buttons */}
             <div className="flex justify-center gap-2 mt-4">
               {[par - 2, par - 1, par, par + 1, par + 2, par + 3].filter(v => v >= 1).map(v => (
                 <button
@@ -191,9 +178,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                   data-testid={`button-quick-score-${v}`}
                   onClick={() => setGrossScore(v)}
                   className={`h-10 w-10 rounded-lg text-sm font-bold transition-all ${
-                    grossScore === v
-                      ? "golf-gradient text-white"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    grossScore === v ? "golf-gradient text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
                   {v}
@@ -202,7 +187,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             </div>
           </div>
 
-          {/* Longest Drive input */}
           {isLongestDrive && (
             <div className="border-t border-border pt-4">
               <div className="flex items-center gap-2 mb-2">
@@ -226,7 +210,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             </div>
           )}
 
-          {/* Closest to Pin input */}
           {isClosestPin && (
             <div className="border-t border-border pt-4">
               <div className="flex items-center gap-2 mb-2">
@@ -252,7 +235,6 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
         </CardContent>
       </Card>
 
-      {/* Hole navigation */}
       <div className="flex gap-3">
         <Button
           data-testid="button-prev-hole"

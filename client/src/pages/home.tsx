@@ -1,17 +1,28 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, LogIn, Flag } from "lucide-react";
+import { getCourse, type Game } from "@shared/schema";
+import { Plus, LogIn, Flag, History, MapPin, Zap, Settings2 } from "lucide-react";
 
 export default function Home() {
   const [, navigate] = useLocation();
   const [joinCode, setJoinCode] = useState("");
   const [joining, setJoining] = useState(false);
   const { toast } = useToast();
+
+  const { data: games } = useQuery<Game[]>({
+    queryKey: ["/api/games"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/games");
+      return res.json();
+    },
+    staleTime: 10000,
+  });
 
   const handleJoin = async () => {
     if (!joinCode.trim()) return;
@@ -27,10 +38,11 @@ export default function Home() {
     }
   };
 
+  const recentGames = games?.slice(0, 5) || [];
+
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-8">
-      {/* Logo / Header */}
-      <div className="text-center mb-10">
+    <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
+      <div className="text-center mb-10 mt-8">
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full golf-gradient mb-4">
           <Flag className="w-10 h-10 text-white" />
         </div>
@@ -38,26 +50,35 @@ export default function Home() {
           Golf Live
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          St. Sofia Golf Club · Ravno Pole
+          Live scoring for Bulgarian golf
         </p>
       </div>
 
       <div className="w-full max-w-sm space-y-4">
-        {/* Create Game */}
         <Card className="border-border">
-          <CardContent className="p-5">
+          <CardContent className="p-5 space-y-3">
             <Button
-              data-testid="button-create-game"
+              data-testid="button-classic-game"
               className="w-full h-14 text-base font-semibold golf-gradient text-white border-0 hover:opacity-90"
-              onClick={() => navigate("/setup")}
+              onClick={() => navigate("/setup/classic")}
             >
-              <Plus className="w-5 h-5 mr-2" />
-              Create New Game
+              <Zap className="w-5 h-5 mr-2" />
+              Quick Game
             </Button>
+            <p className="text-[10px] text-muted-foreground text-center">St. Sofia · Default bets · Fast setup</p>
+            <Button
+              data-testid="button-advanced-game"
+              variant="secondary"
+              className="w-full h-12 font-semibold"
+              onClick={() => navigate("/setup/advanced")}
+            >
+              <Settings2 className="w-4 h-4 mr-2" />
+              Advanced Game
+            </Button>
+            <p className="text-[10px] text-muted-foreground text-center">Choose course · Roster · Custom bets</p>
           </CardContent>
         </Card>
 
-        {/* Join Game */}
         <Card className="border-border">
           <CardContent className="p-5 space-y-3">
             <p className="text-sm font-medium text-foreground">Join Existing Game</p>
@@ -82,10 +103,49 @@ export default function Home() {
             </Button>
           </CardContent>
         </Card>
+
+        {recentGames.length > 0 && (
+          <Card className="border-border">
+            <CardContent className="p-5 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <History className="w-4 h-4 text-muted-foreground" />
+                <p className="text-sm font-medium text-foreground">Recent Games</p>
+              </div>
+              {recentGames.map(g => {
+                const c = getCourse(g.courseId);
+                return (
+                  <button
+                    key={g.id}
+                    className="w-full text-left flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    onClick={() => navigate(`/game/${g.id}`)}
+                    data-testid={`button-game-${g.id}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium text-sm truncate">{g.name}</div>
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <MapPin className="w-3 h-3" />
+                        <span className="truncate">{c.name}</span>
+                        <span>·</span>
+                        <span>{g.date}</span>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ml-2 ${
+                      g.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
+                      g.status === "finished" ? "bg-muted text-muted-foreground" :
+                      "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                    }`}>
+                      {g.status}
+                    </span>
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground mt-8">
-        Real-time scoring · Live leaderboard · Automatic bets
+        6 courses · Live leaderboard · Automatic bets
       </p>
     </div>
   );

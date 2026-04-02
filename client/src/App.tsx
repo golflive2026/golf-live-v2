@@ -13,7 +13,7 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/setup" component={Setup} />
+      <Route path="/setup/:mode?" component={Setup} />
       <Route path="/game/:id" component={GamePage} />
       <Route component={NotFound} />
     </Switch>

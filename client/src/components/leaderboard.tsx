@@ -1,75 +1,53 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { COURSE, type Player, type Score } from "@shared/schema";
+import { type CourseData, type Player, type Score } from "@shared/schema";
 import { computeLeaderboard, getScoreColorClass, getScoreBgClass, type LeaderboardEntry } from "@/lib/golf";
 import { ChevronDown, ChevronUp, Trophy } from "lucide-react";
 
 interface Props {
   players: Player[];
   scores: Score[];
+  course: CourseData;
 }
 
-function PlayerDetail({ entry }: { entry: LeaderboardEntry }) {
-  const front9 = COURSE.holePars.slice(0, 9);
-  const back9 = COURSE.holePars.slice(9, 18);
+function PlayerDetail({ entry, course }: { entry: LeaderboardEntry; course: CourseData }) {
+  const front9 = course.holePars.slice(0, 9);
+  const back9 = course.holePars.slice(9, 18);
 
   return (
     <div className="mt-3 space-y-2">
-      {/* Front 9 */}
-      <div className="text-xs font-medium text-muted-foreground mb-1">Front 9 (Par {COURSE.frontNinePar})</div>
+      <div className="text-xs font-medium text-muted-foreground mb-1">Front 9 (Par {course.frontNinePar})</div>
       <div className="grid grid-cols-9 gap-0.5">
-        {/* Hole numbers */}
         {front9.map((_, i) => (
-          <div key={i} className="text-center text-[10px] text-muted-foreground font-medium">
-            {i + 1}
-          </div>
+          <div key={i} className="text-center text-[10px] text-muted-foreground font-medium">{i + 1}</div>
         ))}
-        {/* Pars */}
         {front9.map((p, i) => (
-          <div key={i} className="text-center text-[10px] text-muted-foreground">
-            {p}
-          </div>
+          <div key={i} className="text-center text-[10px] text-muted-foreground">{p}</div>
         ))}
-        {/* Scores */}
         {front9.map((_, i) => {
           const gross = entry.holeScores[i];
           return (
-            <div
-              key={i}
-              className={`text-center text-xs font-bold rounded py-0.5 ${
-                gross != null ? getScoreColorClass(gross, i) : ""
-              } ${gross != null ? getScoreBgClass(gross, i) : ""}`}
-            >
+            <div key={i} className={`text-center text-xs font-bold rounded py-0.5 ${gross != null ? getScoreColorClass(gross, i, course) : ""} ${gross != null ? getScoreBgClass(gross, i, course) : ""}`}>
               {gross ?? "-"}
             </div>
           );
         })}
       </div>
 
-      {/* Back 9 */}
-      <div className="text-xs font-medium text-muted-foreground mb-1 mt-2">Back 9 (Par {COURSE.backNinePar})</div>
+      <div className="text-xs font-medium text-muted-foreground mb-1 mt-2">Back 9 (Par {course.backNinePar})</div>
       <div className="grid grid-cols-9 gap-0.5">
         {back9.map((_, i) => (
-          <div key={i} className="text-center text-[10px] text-muted-foreground font-medium">
-            {i + 10}
-          </div>
+          <div key={i} className="text-center text-[10px] text-muted-foreground font-medium">{i + 10}</div>
         ))}
         {back9.map((p, i) => (
-          <div key={i} className="text-center text-[10px] text-muted-foreground">
-            {p}
-          </div>
+          <div key={i} className="text-center text-[10px] text-muted-foreground">{p}</div>
         ))}
         {back9.map((_, i) => {
           const idx = i + 9;
           const gross = entry.holeScores[idx];
           return (
-            <div
-              key={i}
-              className={`text-center text-xs font-bold rounded py-0.5 ${
-                gross != null ? getScoreColorClass(gross, idx) : ""
-              } ${gross != null ? getScoreBgClass(gross, idx) : ""}`}
-            >
+            <div key={i} className={`text-center text-xs font-bold rounded py-0.5 ${gross != null ? getScoreColorClass(gross, idx, course) : ""} ${gross != null ? getScoreBgClass(gross, idx, course) : ""}`}>
               {gross ?? "-"}
             </div>
           );
@@ -79,21 +57,16 @@ function PlayerDetail({ entry }: { entry: LeaderboardEntry }) {
   );
 }
 
-export default function Leaderboard({ players, scores }: Props) {
+export default function Leaderboard({ players, scores, course }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const entries = computeLeaderboard(players, scores);
+  const entries = computeLeaderboard(players, scores, course);
 
   if (players.length === 0) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        No players yet
-      </div>
-    );
+    return <div className="text-center py-12 text-muted-foreground">No players yet</div>;
   }
 
   return (
     <div className="space-y-2">
-      {/* Header */}
       <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-2 px-3 py-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
         <div className="w-6">#</div>
         <div>Player</div>
@@ -109,9 +82,7 @@ export default function Leaderboard({ players, scores }: Props) {
         return (
           <Card
             key={entry.player.id}
-            className={`border-border transition-all cursor-pointer ${
-              position === 1 && entry.holesPlayed > 0 ? "border-l-2 border-l-primary" : ""
-            }`}
+            className={`border-border transition-all cursor-pointer ${position === 1 && entry.holesPlayed > 0 ? "border-l-2 border-l-primary" : ""}`}
             onClick={() => setExpandedId(expanded ? null : entry.player.id)}
             data-testid={`card-player-${entry.player.id}`}
           >
@@ -134,14 +105,10 @@ export default function Leaderboard({ players, scores }: Props) {
                     <span>·</span>
                     <span>{entry.holesPlayed} holes</span>
                     {entry.birdies > 0 && (
-                      <Badge variant="secondary" className="h-4 px-1 text-[9px] score-birdie">
-                        {entry.birdies}🐦
-                      </Badge>
+                      <Badge variant="secondary" className="h-4 px-1 text-[9px] score-birdie">{entry.birdies}🐦</Badge>
                     )}
                     {entry.eagles > 0 && (
-                      <Badge variant="secondary" className="h-4 px-1 text-[9px] score-eagle">
-                        {entry.eagles}🦅
-                      </Badge>
+                      <Badge variant="secondary" className="h-4 px-1 text-[9px] score-eagle">{entry.eagles}🦅</Badge>
                     )}
                   </div>
                 </div>
@@ -170,7 +137,6 @@ export default function Leaderboard({ players, scores }: Props) {
                 </div>
               </div>
 
-              {/* Expanded detail */}
               {expanded && (
                 <div className="mt-3 pt-3 border-t border-border">
                   <div className="grid grid-cols-3 gap-3 text-center mb-3">
@@ -187,7 +153,7 @@ export default function Leaderboard({ players, scores }: Props) {
                       <div className="text-sm font-bold">{entry.holesPlayed > 0 ? entry.netTotal : "-"}</div>
                     </div>
                   </div>
-                  <PlayerDetail entry={entry} />
+                  <PlayerDetail entry={entry} course={course} />
                 </div>
               )}
             </CardContent>

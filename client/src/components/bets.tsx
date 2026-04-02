@@ -1,38 +1,42 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type Game, type Player, type Score } from "@shared/schema";
+import { type CourseData, type Game, type Player, type Score } from "@shared/schema";
 import {
   computeLeaderboard,
   computeMatchPlay,
   computeBirdieEagle,
   computeSpecialBets,
 } from "@/lib/golf";
-import { Swords, Bird, Ruler, Target } from "lucide-react";
+import { Ruler, Target } from "lucide-react";
 
 interface Props {
   game: Game;
   players: Player[];
   scores: Score[];
+  course: CourseData;
 }
 
 function MoneyDisplay({ amount, size = "sm" }: { amount: number; size?: "sm" | "lg" }) {
   const color = amount > 0 ? "text-green-600 dark:text-green-400" : amount < 0 ? "text-red-500" : "text-muted-foreground";
   const prefix = amount > 0 ? "+" : "";
   const cls = size === "lg" ? "text-base font-bold" : "text-sm font-semibold";
-  return <span className={`${color} ${cls} tabular-nums`}>€{prefix}{amount.toFixed(0)}</span>;
+  return <span className={`${color} ${cls} tabular-nums`}>{prefix}{amount.toFixed(0)}</span>;
 }
 
-export default function Bets({ game, players, scores }: Props) {
+export default function Bets({ game, players, scores, course }: Props) {
   const [activeTab, setActiveTab] = useState("match");
-  const entries = computeLeaderboard(players, scores);
+  const entries = computeLeaderboard(players, scores, course);
   const matchPlay = computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
   const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
-  const special = computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet);
+  const special = computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet, course);
 
   if (players.length === 0) {
     return <div className="text-center py-12 text-muted-foreground">No players yet</div>;
   }
+
+  const driveHolesLabel = course.longestDriveHoles.join(" & ");
+  const pinHolesLabel = course.par3Holes.join(", ");
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -43,10 +47,9 @@ export default function Bets({ game, players, scores }: Props) {
         <TabsTrigger value="pin" className="text-xs" data-testid="tab-pin">Pin</TabsTrigger>
       </TabsList>
 
-      {/* Match Play */}
       <TabsContent value="match" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
-          Each player vs every other · Front 9 (€{game.first9Bet}) · Back 9 (€{game.second9Bet}) · Full (€{game.wholeGameBet})
+          Winner-takes-all · Front 9 ({game.first9Bet}) · Back 9 ({game.second9Bet}) · Full ({game.wholeGameBet})
         </div>
         {matchPlay.sort((a, b) => b.total - a.total).map(r => (
           <Card key={r.playerId} className="border-border" data-testid={`card-match-${r.playerId}`}>
@@ -74,10 +77,9 @@ export default function Bets({ game, players, scores }: Props) {
         ))}
       </TabsContent>
 
-      {/* Birdies & Eagles */}
       <TabsContent value="birdies" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
-          Birdie pot: €{game.birdiePot}/pair · Eagle pot: €{game.eaglePot}/pair
+          Birdie pot: {game.birdiePot}/pair · Eagle pot: {game.eaglePot}/pair
         </div>
         {birdieEagle.sort((a, b) => b.total - a.total).map(r => (
           <Card key={r.playerId} className="border-border" data-testid={`card-birdie-${r.playerId}`}>
@@ -86,7 +88,7 @@ export default function Bets({ game, players, scores }: Props) {
                 <div>
                   <span className="font-semibold text-sm">{r.playerName}</span>
                   <span className="text-xs text-muted-foreground ml-2">
-                    {r.birdieCount}🐦 {r.eagleCount}🦅
+                    {r.birdieCount} birdie{r.birdieCount !== 1 ? "s" : ""} · {r.eagleCount} eagle{r.eagleCount !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <MoneyDisplay amount={r.total} size="lg" />
@@ -106,10 +108,9 @@ export default function Bets({ game, players, scores }: Props) {
         ))}
       </TabsContent>
 
-      {/* Longest Drive */}
       <TabsContent value="drive" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
-          €{game.longestDriveBet}/player · Holes 9 & 18 · Highest distance wins
+          {game.longestDriveBet}/player · Holes {driveHolesLabel} · Highest distance wins
         </div>
         {special.longestDrive.map(r => (
           <Card key={r.hole} className="border-border" data-testid={`card-drive-${r.hole}`}>
@@ -134,10 +135,9 @@ export default function Bets({ game, players, scores }: Props) {
         ))}
       </TabsContent>
 
-      {/* Closest to Pin */}
       <TabsContent value="pin" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
-          €{game.closestPinBet}/player · Par 3 holes (4, 6, 12, 15) · Shortest distance wins
+          {game.closestPinBet}/player · Par 3 holes ({pinHolesLabel}) · Shortest distance wins
         </div>
         {special.closestPin.map(r => (
           <Card key={r.hole} className="border-border" data-testid={`card-pin-${r.hole}`}>
