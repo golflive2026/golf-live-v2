@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, exportAllData, importAllData } from "./storage";
 import { COURSE_LIST, getCourse } from "@shared/schema";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
 
@@ -308,6 +308,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         wins,
         gameHistory,
       });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // === DATA MANAGEMENT ===
+
+  // Export full database as JSON (for manual backup)
+  app.get("/api/export", (_req, res) => {
+    try {
+      const data = exportAllData();
+      res.setHeader("Content-Disposition", `attachment; filename=golf-live-backup-${new Date().toISOString().split("T")[0]}.json`);
+      res.json(data);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Import full database from JSON (for restore)
+  app.post("/api/import", (req, res) => {
+    try {
+      const data = req.body;
+      if (!data || !data.games) return res.status(400).json({ error: "Invalid backup format" });
+      const counts = importAllData(data);
+      res.json({ ok: true, restored: counts });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
