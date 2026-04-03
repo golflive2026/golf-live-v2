@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -93,22 +94,49 @@ export default function StatsPage() {
   const [showSetPin, setShowSetPin] = useState(false);
   const [newPin, setNewPin] = useState("");
   const [settingPin, setSettingPin] = useState(false);
+  const [showPinForAction, setShowPinForAction] = useState<"toggle" | "handicap" | null>(null);
+  const [actionPin, setActionPin] = useState("");
+  const [newHandicap, setNewHandicap] = useState("");
   const { toast } = useToast();
 
-  const togglePublic = async () => {
-    if (!enteredPin) return;
+  const togglePublic = async (pin: string) => {
     setToggling(true);
     try {
-      const res = await apiRequest("POST", `/api/roster/${rosterId}/toggle-public`, { pin: enteredPin });
+      const res = await apiRequest("POST", `/api/roster/${rosterId}/toggle-public`, { pin });
       const result = await res.json();
       await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId] });
       await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId, "stats", enteredPin] });
-      toast({ title: result.statsPublic ? "Stats are now public" : "Stats are now private" });
+      toast({ title: result.statsPublic ? "Stats are now public — anyone can view" : "Stats are now private — PIN required" });
     } catch {
-      toast({ title: "Failed to toggle", variant: "destructive" });
+      toast({ title: "Wrong PIN", variant: "destructive" });
     } finally {
       setToggling(false);
     }
+  };
+
+  const updateHandicap = async (pin: string) => {
+    try {
+      const res = await apiRequest("POST", `/api/roster/${rosterId}/verify-pin`, { pin });
+      const result = await res.json();
+      if (!result.valid) { toast({ title: "Wrong PIN", variant: "destructive" }); return; }
+      await apiRequest("PATCH", `/api/roster/${rosterId}`, { handicap: parseInt(newHandicap) || 0 });
+      await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId, "stats", enteredPin] });
+      toast({ title: `Handicap updated to ${newHandicap}` });
+    } catch {
+      toast({ title: "Failed to update", variant: "destructive" });
+    }
+  };
+
+  const handleActionPinSubmit = async () => {
+    if (actionPin.length !== 4) return;
+    if (showPinForAction === "toggle") {
+      await togglePublic(actionPin);
+    } else if (showPinForAction === "handicap") {
+      await updateHandicap(actionPin);
+    }
+    setShowPinForAction(null);
+    setActionPin("");
   };
 
   const handleSetPin = async () => {
@@ -327,7 +355,6 @@ export default function StatsPage() {
             </div>
           </div>
           <div className="flex gap-1.5">
-            {/* Show Set PIN if no PIN, or privacy toggle if authenticated */}
             {rosterInfo && !rosterInfo.hasPin && (
               <Button
                 variant="outline"
@@ -339,16 +366,25 @@ export default function StatsPage() {
                 Set PIN
               </Button>
             )}
-            {enteredPin && (
+            {rosterInfo?.hasPin && !showPinForAction && (
               <Button
                 variant="outline"
                 size="sm"
                 className="h-8 text-xs gap-1.5"
-                onClick={togglePublic}
-                disabled={toggling}
+                onClick={() => { setShowPinForAction("toggle"); setActionPin(""); }}
               >
                 {stats.statsPublic ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                 {stats.statsPublic ? "Public" : "Private"}
+              </Button>
+            )}
+            {rosterInfo?.hasPin && !showPinForAction && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={() => { setShowPinForAction("handicap"); setActionPin(""); setNewHandicap(String(stats.handicap)); }}
+              >
+                Edit HCP
               </Button>
             )}
           </div>
@@ -382,6 +418,50 @@ export default function StatsPage() {
               <p className="text-[10px] text-muted-foreground text-center">
                 After setting a PIN, only you can view these stats. You can make them public again anytime.
               </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* PIN entry for actions (toggle privacy / edit handicap) */}
+        {showPinForAction && (
+          <Card className="mb-4">
+            <CardContent className="p-4 flex flex-col items-center gap-3">
+              <p className="text-sm font-medium">
+                {showPinForAction === "toggle"
+                  ? `Enter PIN to make stats ${stats.statsPublic ? "private" : "public"}`
+                  : "Enter PIN to edit handicap"}
+              </p>
+              {showPinForAction === "handicap" && (
+                <Input
+                  type="number"
+                  value={newHandicap}
+                  onChange={e => setNewHandicap(e.target.value)}
+                  className="h-10 w-24 text-center"
+                  min={0}
+                  max={54}
+                  placeholder="HCP"
+                />
+              )}
+              <InputOTP maxLength={4} value={actionPin} onChange={setActionPin} pattern="^[0-9]*$">
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                </InputOTPGroup>
+              </InputOTP>
+              <div className="flex gap-2 w-full">
+                <Button variant="secondary" className="flex-1" onClick={() => setShowPinForAction(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 golf-gradient text-white border-0"
+                  onClick={handleActionPinSubmit}
+                  disabled={actionPin.length !== 4 || toggling}
+                >
+                  Confirm
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
