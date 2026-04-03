@@ -166,7 +166,7 @@ export default function GamePage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {showPace && <PaceTimer gameId={game.id} currentHole={currentHole} />}
+        {showPace && <PaceTimer gameId={game.id} currentHole={currentHole} gameStatus={game.status} />}
 
         {tab === "quick" && (
           <QuickScore game={game} players={players} scores={scores} course={course} onHoleChange={setCurrentHole} />

@@ -57,6 +57,120 @@ function PlayerDetail({ entry, course }: { entry: LeaderboardEntry; course: Cour
   );
 }
 
+// Savage randomized commentary
+function pick(arr: string[], seed: number): string {
+  return arr[Math.abs(seed) % arr.length];
+}
+
+function getPlayerComment(entry: LeaderboardEntry, position: number, total: number, course: CourseData): string | null {
+  if (entry.holesPlayed === 0) return null;
+  if (entry.holesPlayed < 2) return null;
+  const seed = entry.player.id * 7 + entry.holesPlayed * 13 + entry.grossTotal;
+
+  // Leader
+  if (position === 1 && total > 1) {
+    if (entry.birdies >= 3) return pick([
+      "On fire. Someone call the marshals",
+      "Playing golf while others play fetch",
+      "At this point just hand over the wallets",
+      "Forgot to tell everyone this is a charity event",
+    ], seed);
+    if (entry.eagles > 0) return pick([
+      "Eagle on the card. Lunch is sorted",
+      "Showing off with eagles. We get it, you're good",
+      "That eagle cost everyone else money. Beautiful",
+    ], seed);
+    return pick([
+      "Leading. Try not to bottle it on the back 9",
+      "Currently winning. Historically, this means nothing",
+      "Ahead for now. Golf has a way of humbling people",
+      "Top of the board. Don't let it go to your head",
+    ], seed);
+  }
+
+  // Last place
+  if (position === total && total > 1) {
+    if (entry.holesPlayed >= 14) return pick([
+      "Thanks for lunch. And dinner. And drinks",
+      "Officially the group's financial advisor... in reverse",
+      "Playing like the course owes him money",
+      "Somebody has to fund the prizes. Thank you for your service",
+      "The ATM of the group. Generous as always",
+      "Playing for the prestigious 'Most Improved Next Time' award",
+    ], seed);
+    if (entry.holesPlayed >= 9) return pick([
+      "Back 9 can only get better... right? RIGHT?",
+      "The course isn't going anywhere. Neither is last place",
+      "At least the scenery is nice from back here",
+      "Still technically playing golf. Technically",
+    ], seed);
+    return pick([
+      "Early days. Plenty of time to disappoint properly",
+      "Warming up. The real disaster starts on the back 9",
+      "Off to a classic start",
+    ], seed);
+  }
+
+  // Second to last
+  if (position === total - 1 && total > 2) return pick([
+    "One spot from buying lunch. Sweat accordingly",
+    "Close to last. Can almost taste the free meal",
+    "The buffer between mediocrity and the lunch bill",
+  ], seed);
+
+  // Second place
+  if (position === 2 && total > 2) return pick([
+    "First loser. Nobody remembers second place",
+    "Close enough to dream, far enough to suffer",
+    "Silver medal energy",
+  ], seed);
+
+  // Strong back 9
+  if (entry.holesPlayed >= 12 && entry.back9Net < entry.front9Net - 3) return pick([
+    "Back 9 merchant. Where was this 2 hours ago?",
+    "Woke up on the back 9. Better late than never",
+    "Front 9 was just a warm-up apparently",
+  ], seed);
+
+  // Eagle while losing
+  if (entry.eagles > 0 && position > 2) return pick([
+    "Has an eagle but still losing. Peak golf",
+    "Eagle spotted! Shame about the other 17 holes",
+    "One hole of genius, surrounded by chaos",
+  ], seed);
+
+  // Many birdies
+  if (entry.birdies >= 2 && entry.holesPlayed <= 9) return pick([
+    "Birdie hunting season is open",
+    "Collecting birdies. Wallet collectors take note",
+    "Two birdies in 9 holes. Who is this person?",
+  ], seed);
+
+  // Lots of bogeys
+  if (entry.holesPlayed >= 6) {
+    const avgOverPar = (entry.grossTotal - entry.holesPlayed * (course.totalPar / 18)) / entry.holesPlayed;
+    if (avgOverPar > 2) return pick([
+      "Bogey train. Next stop: double bogey",
+      "Playing a different game to everyone else",
+      "The course is winning this battle",
+      "Treating par as a suggestion, not a target",
+      "Golf is hard. This is proof",
+    ], seed);
+  }
+
+  // Middle of pack (50% chance to show — less clutter)
+  if (total >= 4 && position > 1 && position < total && seed % 2 === 0) return pick([
+    "Floating in the middle. Switzerland of golf",
+    "Not winning, not buying lunch. The sweet spot",
+    "Perfectly average. A gift and a curse",
+    "The invisible middle. No glory, no shame",
+  ], seed);
+
+  return null;
+
+  return null;
+}
+
 export default function Leaderboard({ players, scores, course }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const entries = computeLeaderboard(players, scores, course);
@@ -111,6 +225,12 @@ export default function Leaderboard({ players, scores, course }: Props) {
                       <Badge variant="secondary" className="h-4 px-1 text-[9px] score-eagle">{entry.eagles}🦅</Badge>
                     )}
                   </div>
+                  {(() => {
+                    const comment = getPlayerComment(entry, idx + 1, entries.length, course);
+                    return comment ? (
+                      <p className="text-[10px] italic text-muted-foreground/70 mt-0.5">{comment}</p>
+                    ) : null;
+                  })()}
                 </div>
 
                 <div className="text-right w-12">
