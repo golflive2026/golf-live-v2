@@ -103,11 +103,27 @@ export default function Roster() {
     }
   };
 
-  const deletePlayer = async (id: number, name: string) => {
+  const deletePlayer = async (id: number, name: string, hasPin: boolean) => {
     try {
-      await apiRequest("DELETE", `/api/roster/${id}`);
+      if (hasPin) {
+        const pin = prompt(`${name}'s account is claimed. Enter PIN to deactivate:`);
+        if (!pin) return;
+        const res = await fetch(`/api/roster/${id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          toast({ title: err.error || "Wrong PIN", variant: "destructive" });
+          return;
+        }
+      } else {
+        await apiRequest("DELETE", `/api/roster/${id}`);
+      }
       await queryClient.invalidateQueries({ queryKey: ["/api/roster"] });
-      toast({ title: `${name} removed from roster` });
+      await queryClient.invalidateQueries({ queryKey: ["/api/badges"] });
+      toast({ title: `${name} deactivated. Creating same name again will restore the account.` });
     } catch {
       toast({ title: "Failed to delete", variant: "destructive" });
     }
@@ -245,46 +261,42 @@ export default function Roster() {
                       >
                         <BarChart3 className="w-4 h-4 text-muted-foreground" />
                       </Button>
-                      {p.hasPin ? (
-                        <span title="Profile claimed — edit handicap during game setup" className="flex items-center h-8 px-1">
+                      {p.hasPin && (
+                        <span title="Claimed profile" className="flex items-center h-8 px-1">
                           <ShieldCheck className="w-4 h-4 text-green-600" />
                         </span>
-                      ) : (
-                      <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => startEdit(p)}
-                      >
-                        <Pencil className="w-4 h-4 text-muted-foreground" />
-                      </Button>
+                      )}
+                      {!p.hasPin && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEdit(p)}>
+                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Trash2 className="w-4 h-4 text-destructive" />
+                            <Trash2 className={`w-4 h-4 ${p.hasPin ? "text-muted-foreground" : "text-destructive"}`} />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Remove {p.name}?</AlertDialogTitle>
+                            <AlertDialogTitle>Deactivate {p.name}?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will remove {p.name} from the roster. They won't appear in quick-add when setting up games.
+                              {p.hasPin
+                                ? `${p.name}'s account is claimed. You'll need their PIN. Creating the same name again will restore the account with all stats.`
+                                : `This will deactivate ${p.name}. Creating the same name again will restore them.`}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                              onClick={() => deletePlayer(p.id, p.name)}
+                              onClick={() => deletePlayer(p.id, p.name, p.hasPin)}
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
-                              Remove
+                              {p.hasPin ? "Enter PIN to Deactivate" : "Deactivate"}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                      </>
-                      )}
                     </div>
                   </>
                 )}

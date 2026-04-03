@@ -46,6 +46,7 @@ async function initDatabase(): Promise<void> {
     "ALTER TABLE players ADD COLUMN roster_id INTEGER DEFAULT NULL",
     "ALTER TABLE roster ADD COLUMN pin TEXT DEFAULT NULL",
     "ALTER TABLE roster ADD COLUMN stats_public INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE roster ADD COLUMN active INTEGER NOT NULL DEFAULT 1",
   ];
   for (const m of migrations) {
     try { await client.execute(m); } catch {}
@@ -129,13 +130,13 @@ export class DatabaseStorage {
     return await db.select().from(scores).where(eq(scores.playerId, playerId));
   }
   async listRoster(): Promise<RosterPlayer[]> {
-    return await db.select().from(roster);
+    // Only return active players
+    return await db.select().from(roster).where(eq(roster.active, 1));
   }
   async getRosterPlayer(id: number): Promise<RosterPlayer | undefined> {
     return await db.select().from(roster).where(eq(roster.id, id)).get();
   }
   async addToRoster(name: string, handicap: number): Promise<RosterPlayer> {
-    // Use upsert to prevent duplicates
     return await this.upsertRoster(name, handicap);
   }
   async updateRosterPlayer(id: number, data: { name?: string; handicap?: number; pin?: string; statsPublic?: number }): Promise<RosterPlayer | undefined> {
@@ -143,12 +144,17 @@ export class DatabaseStorage {
     return rows[0];
   }
   async deleteRosterPlayer(id: number): Promise<void> {
-    await db.delete(roster).where(eq(roster.id, id));
+    // Soft delete — set active=0, preserve data for restore
+    await db.update(roster).set({ active: 0 }).where(eq(roster.id, id));
   }
   async upsertRoster(name: string, handicap: number): Promise<RosterPlayer> {
+    // Check ALL entries including inactive — auto-restore if same name
     const existing = await db.select().from(roster).where(eq(roster.name, name)).get();
     if (existing) {
-      return (await db.update(roster).set({ handicap }).where(eq(roster.id, existing.id)).returning())[0];
+      // Reactivate if inactive, update handicap
+      const updates: any = { handicap };
+      if (!existing.active) updates.active = 1;
+      return (await db.update(roster).set(updates).where(eq(roster.id, existing.id)).returning())[0];
     }
     return (await db.insert(roster).values({ name, handicap }).returning())[0];
   }

@@ -119,6 +119,7 @@ export const roster = sqliteTable("roster", {
   handicap: integer("handicap").notNull().default(18),
   pin: text("pin"),
   statsPublic: integer("stats_public").notNull().default(0),
+  active: integer("active").notNull().default(1),
 });
 
 export type RosterPlayer = typeof roster.$inferSelect;

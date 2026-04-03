@@ -184,8 +184,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/roster/:id", async (req, res) => {
-    await storage.deleteRosterPlayer(Number(req.params.id));
-    res.json({ ok: true });
+    const rp = await storage.getRosterPlayer(Number(req.params.id));
+    if (!rp) return res.status(404).json({ error: "Player not found" });
+    // Claimed accounts require PIN to delete
+    if (rp.pin) {
+      const { pin } = req.body || {};
+      if (!pin) return res.status(403).json({ error: "This account is claimed. PIN required to delete.", requiresPin: true });
+      if (pin !== rp.pin) return res.status(403).json({ error: "Wrong PIN" });
+    }
+    await storage.deleteRosterPlayer(rp.id);
+    res.json({ ok: true, restored: false });
   });
 
   // Get single roster player (public info — no pin)
