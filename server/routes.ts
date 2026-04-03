@@ -75,6 +75,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/games/:id", async (req, res) => {
     const game = await storage.getGame(Number(req.params.id));
     if (!game) return res.status(404).json({ error: "Game not found" });
+    // If any player in this game has a claimed profile (PIN set), require their PIN to delete
+    const gamePlayers = await storage.getPlayersByGame(game.id);
+    const claimedRosterIds = gamePlayers.filter(p => p.rosterId).map(p => p.rosterId!);
+    let needsPin = false;
+    for (const rid of claimedRosterIds) {
+      const rp = await storage.getRosterPlayer(rid);
+      if (rp?.pin) { needsPin = true; break; }
+    }
+    if (needsPin) {
+      const { pin } = req.body || {};
+      if (!pin) return res.status(403).json({ error: "This game has claimed players. A player PIN is required to delete.", requiresPin: true });
+      // Verify PIN belongs to any claimed player in this game
+      let pinValid = false;
+      for (const rid of claimedRosterIds) {
+        const rp = await storage.getRosterPlayer(rid);
+        if (rp?.pin === pin) { pinValid = true; break; }
+      }
+      if (!pinValid) return res.status(403).json({ error: "Invalid PIN" });
+    }
     await storage.deleteGame(game.id);
     res.json({ ok: true });
   });
@@ -116,6 +135,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const { gameId, playerId, hole, grossScore, longestDrive, closestPin } = req.body;
       if (!gameId || !playerId || !hole) return res.status(400).json({ error: "gameId, playerId, and hole are required" });
+      // Block score edits on finished games
+      const game = await storage.getGame(gameId);
+      if (game?.status === "finished") return res.status(403).json({ error: "Game is finished — scores are locked" });
       const score = await storage.upsertScore(gameId, playerId, hole, {
         grossScore: grossScore !== undefined ? grossScore : undefined,
         longestDrive: longestDrive !== undefined ? longestDrive : undefined,

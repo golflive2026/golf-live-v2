@@ -17,8 +17,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { RosterPlayer } from "@shared/schema";
-import { ArrowLeft, Plus, Trash2, Pencil, Check, X, Users, BarChart3 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Pencil, Check, X, Users, BarChart3, ShieldCheck } from "lucide-react";
+
+interface RosterItem {
+  id: number;
+  name: string;
+  handicap: number;
+  statsPublic: number;
+  hasPin: boolean;
+}
 
 export default function Roster() {
   const [, navigate] = useLocation();
@@ -29,7 +36,7 @@ export default function Roster() {
   const [editName, setEditName] = useState("");
   const [editHcp, setEditHcp] = useState("");
 
-  const { data: players } = useQuery<RosterPlayer[]>({
+  const { data: players } = useQuery<RosterItem[]>({
     queryKey: ["/api/roster"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/roster");
@@ -71,7 +78,7 @@ export default function Roster() {
     }
   };
 
-  const startEdit = (p: RosterPlayer) => {
+  const startEdit = (p: RosterItem) => {
     setEditingId(p.id);
     setEditName(p.name);
     setEditHcp(String(p.handicap));
@@ -238,6 +245,12 @@ export default function Roster() {
                       >
                         <BarChart3 className="w-4 h-4 text-muted-foreground" />
                       </Button>
+                      {p.hasPin ? (
+                        <span title="Profile claimed — edit handicap during game setup" className="flex items-center h-8 px-1">
+                          <ShieldCheck className="w-4 h-4 text-green-600" />
+                        </span>
+                      ) : (
+                      <>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -270,6 +283,8 @@ export default function Roster() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
+                      </>
+                      )}
                     </div>
                   </>
                 )}

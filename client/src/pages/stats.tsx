@@ -220,8 +220,7 @@ export default function StatsPage() {
     );
   }
 
-  // No PIN set and stats are private — this shouldn't happen anymore
-  // since stats are open when no PIN is set, but keep as fallback
+  // Fallback: if stats can't be fetched, show PIN entry if applicable
   if (rosterInfo && !canFetchStats) {
     return (
       <div className="min-h-screen bg-background px-4 py-6">
@@ -233,14 +232,36 @@ export default function StatsPage() {
             <h1 className="text-lg font-bold">{rosterInfo.name}'s Stats</h1>
           </div>
           <Card>
-            <CardContent className="p-6 text-center space-y-3">
-              <Lock className="w-10 h-10 text-muted-foreground mx-auto" />
-              <p className="text-sm text-muted-foreground">
-                Stats are not available.
-              </p>
-              <Button variant="secondary" onClick={() => navigate("/")}>
-                Go Home
-              </Button>
+            <CardContent className="p-6 flex flex-col items-center gap-4">
+              <Lock className="w-10 h-10 text-muted-foreground" />
+              {rosterInfo.hasPin ? (
+                <>
+                  <p className="text-sm text-muted-foreground text-center">
+                    These stats are private. Enter PIN to view.
+                  </p>
+                  <InputOTP maxLength={4} value={pin} onChange={setPin} pattern="^[0-9]*$">
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                  {pinError && <p className="text-xs text-destructive">{pinError}</p>}
+                  <Button
+                    className="w-full golf-gradient text-white border-0"
+                    onClick={handlePinSubmit}
+                    disabled={pin.length !== 4 || (!!enteredPin && isLoading)}
+                  >
+                    {enteredPin && isLoading ? "Checking..." : "Unlock Stats"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">No stats available yet.</p>
+                  <Button variant="secondary" onClick={() => navigate("/roster")}>Back to Roster</Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

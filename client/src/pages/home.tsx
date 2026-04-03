@@ -43,7 +43,31 @@ export default function Home() {
     e.stopPropagation();
     if (!confirm(`Delete "${gameName}"? All scores and player data will be permanently removed.`)) return;
     try {
-      await apiRequest("DELETE", `/api/games/${gameId}`);
+      // First try without PIN
+      const res = await fetch(`/api/games/${gameId}`, { method: "DELETE", headers: { "Content-Type": "application/json" } });
+      if (res.status === 403) {
+        const data = await res.json();
+        if (data.requiresPin) {
+          const pin = prompt("This game has claimed players. Enter any player's PIN to delete:");
+          if (!pin) return;
+          const res2 = await fetch(`/api/games/${gameId}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin }),
+          });
+          if (!res2.ok) {
+            const err = await res2.json();
+            toast({ title: err.error || "Failed to delete", variant: "destructive" });
+            return;
+          }
+        } else {
+          toast({ title: data.error || "Failed to delete", variant: "destructive" });
+          return;
+        }
+      } else if (!res.ok) {
+        toast({ title: "Failed to delete", variant: "destructive" });
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: ["/api/games"] });
       toast({ title: "Game deleted" });
     } catch {
