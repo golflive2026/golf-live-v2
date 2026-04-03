@@ -29,46 +29,16 @@ export const db = drizzle(client);
 async function initDatabase(): Promise<void> {
   console.log("[STORAGE] Initializing tables...");
 
-  await client.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS games (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      date TEXT NOT NULL,
-      code TEXT NOT NULL UNIQUE,
-      course_id TEXT NOT NULL DEFAULT 'st-sofia',
-      status TEXT NOT NULL DEFAULT 'setup',
-      first9_bet REAL NOT NULL DEFAULT 5,
-      second9_bet REAL NOT NULL DEFAULT 5,
-      whole_game_bet REAL NOT NULL DEFAULT 15,
-      birdie_pot REAL NOT NULL DEFAULT 3,
-      eagle_pot REAL NOT NULL DEFAULT 30,
-      longest_drive_bet REAL NOT NULL DEFAULT 3,
-      closest_pin_bet REAL NOT NULL DEFAULT 3
-    );
-    CREATE TABLE IF NOT EXISTS players (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      game_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      handicap INTEGER NOT NULL DEFAULT 0,
-      roster_id INTEGER DEFAULT NULL
-    );
-    CREATE TABLE IF NOT EXISTS scores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      game_id INTEGER NOT NULL,
-      player_id INTEGER NOT NULL,
-      hole INTEGER NOT NULL,
-      gross_score INTEGER,
-      longest_drive REAL,
-      closest_pin REAL
-    );
-    CREATE TABLE IF NOT EXISTS roster (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      handicap INTEGER NOT NULL DEFAULT 18,
-      pin TEXT DEFAULT NULL,
-      stats_public INTEGER NOT NULL DEFAULT 0
-    );
-  `);
+  // Create tables individually (executeMultiple can fail on some Turso plans)
+  const tables = [
+    `CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, date TEXT NOT NULL, code TEXT NOT NULL UNIQUE, course_id TEXT NOT NULL DEFAULT 'st-sofia', status TEXT NOT NULL DEFAULT 'setup', first9_bet REAL NOT NULL DEFAULT 5, second9_bet REAL NOT NULL DEFAULT 5, whole_game_bet REAL NOT NULL DEFAULT 15, birdie_pot REAL NOT NULL DEFAULT 3, eagle_pot REAL NOT NULL DEFAULT 30, longest_drive_bet REAL NOT NULL DEFAULT 3, closest_pin_bet REAL NOT NULL DEFAULT 3)`,
+    `CREATE TABLE IF NOT EXISTS players (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id INTEGER NOT NULL, name TEXT NOT NULL, handicap INTEGER NOT NULL DEFAULT 0, roster_id INTEGER DEFAULT NULL)`,
+    `CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id INTEGER NOT NULL, player_id INTEGER NOT NULL, hole INTEGER NOT NULL, gross_score INTEGER, longest_drive REAL, closest_pin REAL)`,
+    `CREATE TABLE IF NOT EXISTS roster (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, handicap INTEGER NOT NULL DEFAULT 18, pin TEXT DEFAULT NULL, stats_public INTEGER NOT NULL DEFAULT 0)`,
+  ];
+  for (const sql of tables) {
+    await client.execute(sql);
+  }
 
   // Additive migrations (safe to run multiple times)
   const migrations = [
