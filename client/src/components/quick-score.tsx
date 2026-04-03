@@ -133,20 +133,22 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
               ) : (
                 <div className="w-3.5 shrink-0" />
               )}
-              <div className="min-w-0">
-                <span className="text-sm font-medium truncate block">{player.name}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-sm font-medium truncate">{player.name}</span>
+                  {existing != null && (
+                    <span className={`text-xs font-bold shrink-0 ${
+                      existing < par ? "score-birdie" : existing === par ? "score-par" : "score-bogey"
+                    }`}>
+                      {existing}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] text-muted-foreground">
                   HCP {player.handicap}
                   {strokes > 0 && <span className="text-primary font-semibold ml-1">+{strokes}</span>}
                 </span>
               </div>
-              {existing != null && (
-                <span className={`text-xs font-bold shrink-0 ml-auto ${
-                  existing < par ? "score-birdie" : existing === par ? "score-par" : "score-bogey"
-                }`}>
-                  {existing}
-                </span>
-              )}
             </div>
             {quickValues.map(v => (
               <button

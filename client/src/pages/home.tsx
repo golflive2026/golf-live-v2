@@ -80,8 +80,9 @@ export default function Home() {
   const hasMore = allGames.length > 5;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
-      <div className="text-center mb-10 mt-8">
+    <div className="min-h-screen bg-background px-4 py-8">
+      <div className="max-w-sm mx-auto">
+      <div className="text-center mb-8 mt-4">
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full golf-gradient mb-4">
           <Flag className="w-10 h-10 text-white" />
         </div>
@@ -93,7 +94,7 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="w-full max-w-sm space-y-4">
+      <div className="space-y-4">
         <Card className="border-border">
           <CardContent className="p-5 space-y-3">
             <Button
@@ -210,9 +211,10 @@ export default function Home() {
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground mt-8">
+      <p className="text-xs text-muted-foreground text-center mt-8">
         6 courses · Live leaderboard · Automatic bets
       </p>
+      </div>
     </div>
   );
 }
