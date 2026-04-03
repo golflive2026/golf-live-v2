@@ -22,7 +22,8 @@ export default function Home() {
       const res = await apiRequest("GET", "/api/games");
       return res.json();
     },
-    staleTime: 10000,
+    staleTime: 30000,
+    placeholderData: (prev) => prev, // keep previous data during refetch to prevent layout jump
   });
 
   const handleJoin = async () => {
@@ -152,13 +153,15 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {allGames.length > 0 && (
-          <Card className="border-border">
-            <CardContent className="p-5 space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <History className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-medium text-foreground">Recent Games</p>
-              </div>
+        <Card className="border-border">
+          <CardContent className="p-5 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <History className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">Recent Games</p>
+            </div>
+            {allGames.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-2">No games yet. Start your first round!</p>
+            )}
               {displayGames.map(g => {
                 const c = getCourse(g.courseId);
                 return (
@@ -208,7 +211,6 @@ export default function Home() {
               )}
             </CardContent>
           </Card>
-        )}
       </div>
 
       <p className="text-xs text-muted-foreground text-center mt-8">

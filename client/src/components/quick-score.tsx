@@ -65,7 +65,8 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
     }
   }, [game.id, currentHole, par]);
 
-  const quickValues = [par - 2, par - 1, par, par + 1, par + 2, par + 3].filter(v => v >= 1);
+  // 5 buttons max to leave room for player name on mobile (375px)
+  const quickValues = [par - 1, par, par + 1, par + 2, par + 3].filter(v => v >= 1);
 
   return (
     <div className="space-y-3">
@@ -127,26 +128,16 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
             className={`grid gap-0.5 items-center rounded-lg py-1 transition-colors ${existing != null ? "opacity-70" : ""}`}
             style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem) 3rem` }}
           >
-            <div className="flex items-center gap-1 px-2 min-w-0">
+            <div className="flex items-center gap-1.5 px-1 min-w-0">
               {existing != null ? (
                 <Check className="w-3.5 h-3.5 text-green-500 shrink-0" />
               ) : (
                 <div className="w-3.5 shrink-0" />
               )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-sm font-medium truncate">{player.name}</span>
-                  {existing != null && (
-                    <span className={`text-xs font-bold shrink-0 ${
-                      existing < par ? "score-birdie" : existing === par ? "score-par" : "score-bogey"
-                    }`}>
-                      {existing}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] text-muted-foreground">
-                  HCP {player.handicap}
-                  {strokes > 0 && <span className="text-primary font-semibold ml-1">+{strokes}</span>}
+              <div className="min-w-0">
+                <span className="text-xs font-medium truncate block leading-tight">{player.name}</span>
+                <span className="text-[10px] text-muted-foreground leading-tight">
+                  {player.handicap}hcp{strokes > 0 && <span className="text-primary font-semibold"> +{strokes}</span>}
                 </span>
               </div>
             </div>
