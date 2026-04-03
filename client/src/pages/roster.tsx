@@ -238,7 +238,7 @@ export default function Roster() {
                       </div>
                       {badges && badges[p.id] && badges[p.id].length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {badges[p.id].map(b => (
+                          {badges[p.id].slice(0, 3).map(b => (
                             <span
                               key={b.id}
                               title={`${b.title}: ${b.description}`}
@@ -248,6 +248,9 @@ export default function Roster() {
                               <span className="text-muted-foreground">{b.title}</span>
                             </span>
                           ))}
+                          {badges[p.id].length > 3 && (
+                            <span className="text-[10px] text-muted-foreground px-1">+{badges[p.id].length - 3}</span>
+                          )}
                         </div>
                       )}
                     </div>

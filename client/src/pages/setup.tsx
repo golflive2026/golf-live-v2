@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { DEFAULT_BETS, type RosterPlayer } from "@shared/schema";
-import { ArrowLeft, Plus, Trash2, Play, DollarSign, Users, MapPin, UserPlus } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Play, DollarSign, Users, MapPin, UserPlus, Pencil } from "lucide-react";
 
 interface PlayerInput {
   name: string;
@@ -38,6 +38,8 @@ export default function Setup() {
   const [newHcp, setNewHcp] = useState("18");
   const [bets, setBets] = useState({ ...DEFAULT_BETS });
   const [creating, setCreating] = useState(false);
+  const [editingHcpIdx, setEditingHcpIdx] = useState<number | null>(null);
+  const [editHcpValue, setEditHcpValue] = useState("");
 
   const { data: courses } = useQuery<CourseOption[]>({
     queryKey: ["/api/courses"],
@@ -73,6 +75,13 @@ export default function Setup() {
 
   const removePlayer = (idx: number) => {
     setPlayers(players.filter((_, i) => i !== idx));
+    if (editingHcpIdx === idx) setEditingHcpIdx(null);
+  };
+
+  const updatePlayerHandicap = (idx: number, value: string) => {
+    const hcp = Math.max(0, Math.min(54, parseInt(value) || 0));
+    setPlayers(players.map((p, i) => i === idx ? { ...p, handicap: hcp } : p));
+    setEditingHcpIdx(null);
   };
 
   const toggleRosterPlayer = (rp: RosterPlayer) => {
@@ -244,9 +253,29 @@ export default function Setup() {
                 <div className="space-y-2">
                   {players.map((p, i) => (
                     <div key={i} className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2" data-testid={`row-player-${i}`}>
-                      <div>
+                      <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">{p.name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">HCP {p.handicap}</span>
+                        {editingHcpIdx === i ? (
+                          <Input
+                            type="number"
+                            value={editHcpValue}
+                            onChange={e => setEditHcpValue(e.target.value)}
+                            onBlur={() => updatePlayerHandicap(i, editHcpValue)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") updatePlayerHandicap(i, editHcpValue);
+                              if (e.key === "Escape") setEditingHcpIdx(null);
+                            }}
+                            className="h-8 w-16 text-sm text-center"
+                            min={0} max={54} autoFocus
+                          />
+                        ) : (
+                          <button
+                            onClick={() => { setEditingHcpIdx(i); setEditHcpValue(String(p.handicap)); }}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 px-1.5 rounded-md hover:bg-muted"
+                          >
+                            HCP {p.handicap} <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removePlayer(i)} data-testid={`button-remove-player-${i}`}>
                         <Trash2 className="w-4 h-4 text-destructive" />
