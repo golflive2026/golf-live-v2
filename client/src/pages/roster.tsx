@@ -37,6 +37,15 @@ export default function Roster() {
     },
   });
 
+  const { data: badges } = useQuery<Record<number, { id: string; emoji: string; title: string; description: string }[]>>({
+    queryKey: ["/api/badges"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/badges");
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
   const sorted = [...(players || [])].sort((a, b) =>
     a.name.localeCompare(b.name)
   );
@@ -200,10 +209,24 @@ export default function Roster() {
                 ) : (
                   <>
                     <div className="min-w-0 flex-1 mr-2">
-                      <span className="font-medium text-sm truncate block">{p.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        HCP {p.handicap}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-sm truncate">{p.name}</span>
+                        <span className="text-xs text-muted-foreground">HCP {p.handicap}</span>
+                      </div>
+                      {badges && badges[p.id] && badges[p.id].length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {badges[p.id].map(b => (
+                            <span
+                              key={b.id}
+                              title={`${b.title}: ${b.description}`}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-[10px] cursor-default"
+                            >
+                              <span>{b.emoji}</span>
+                              <span className="text-muted-foreground">{b.title}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-1">
                       <Button

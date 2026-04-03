@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage, exportAllData, importAllData, getStorageStatus } from "./storage";
 import { COURSE_LIST, getCourse } from "@shared/schema";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
+import { computeBadges } from "./badges";
 
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -309,6 +310,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // === DATA MANAGEMENT & HEALTH ===
+  // Badges — fun achievements computed from game history
+  app.get("/api/badges", async (_req, res) => {
+    try {
+      const allGames = await storage.listGames();
+      const allRoster = await storage.listRoster();
+      // Fetch all players and scores in parallel
+      const [playersArrays, scoresArrays] = await Promise.all([
+        Promise.all(allGames.map(g => storage.getPlayersByGame(g.id))),
+        Promise.all(allGames.map(g => storage.getScoresByGame(g.id))),
+      ]);
+      const allPlayers = playersArrays.flat();
+      const allScores = scoresArrays.flat();
+      const badgeMap = await computeBadges(allGames, allPlayers, allScores, allRoster);
+      const result: Record<number, any[]> = {};
+      badgeMap.forEach((badges, rosterId) => { result[rosterId] = badges; });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/health", async (_req, res) => {
     res.json(await getStorageStatus());
   });
