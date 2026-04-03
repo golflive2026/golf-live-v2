@@ -12,9 +12,17 @@ import { eq, and, desc, sql } from "drizzle-orm";
 const dbUrl = process.env.TURSO_DATABASE_URL || "file:local.db";
 const authToken = process.env.TURSO_AUTH_TOKEN;
 
-console.log(`[STORAGE] Connecting to: ${dbUrl.startsWith("libsql://") ? dbUrl.split("@")[1] || dbUrl : dbUrl}`);
+console.log(`[STORAGE] === DATABASE STARTUP ===`);
+console.log(`[STORAGE] TURSO_DATABASE_URL: ${dbUrl ? (dbUrl.startsWith("libsql://") ? dbUrl : "(local file)") : "NOT SET"}`);
+console.log(`[STORAGE] TURSO_AUTH_TOKEN: ${authToken ? "set (" + authToken.length + " chars)" : "NOT SET"}`);
 
-const client = createClient({ url: dbUrl, authToken });
+let client: ReturnType<typeof createClient>;
+try {
+  client = createClient({ url: dbUrl, authToken });
+} catch (e) {
+  console.error(`[STORAGE] FATAL: Failed to create database client:`, e);
+  throw e;
+}
 export const db = drizzle(client);
 
 // === INITIALIZATION (runs before server starts) ===
@@ -79,6 +87,7 @@ async function initDatabase(): Promise<void> {
 }
 
 // Export promise for index.ts to await before serving traffic
+// If this fails, server still starts but /api/health will show the error
 export const storageReady: Promise<void> = initDatabase();
 
 // === STORAGE CLASS (all methods async) ===

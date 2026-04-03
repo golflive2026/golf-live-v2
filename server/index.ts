@@ -61,9 +61,15 @@ app.use((req, res, next) => {
 
 (async () => {
   // Wait for database initialization before serving traffic
-  const { storageReady } = require("./storage");
-  await storageReady;
-  log("Database ready");
+  try {
+    const { storageReady } = require("./storage");
+    await storageReady;
+    log("Database ready");
+  } catch (e) {
+    console.error("FATAL: Database initialization failed:", e);
+    console.error("Check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN env vars");
+    // Continue anyway so /api/health can report the error
+  }
 
   await registerRoutes(httpServer, app);
 
