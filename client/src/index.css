@@ -4,6 +4,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent overscroll bounce on mobile that causes scroll-to-top glitch */
+html, body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* LIGHT MODE - Golf themed: Deep Green primary, Gold accent */
 :root {
   --button-outline: rgba(0,0,0, .10);

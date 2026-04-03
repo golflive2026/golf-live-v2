@@ -81,7 +81,7 @@ export default function Home() {
   const hasMore = allGames.length > 5;
 
   return (
-    <div className="min-h-screen bg-background px-4 py-8">
+    <div className="bg-background px-4 py-8" style={{ minHeight: '100dvh' }}>
       <div className="max-w-sm mx-auto">
       <div className="text-center mb-8 mt-4">
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full golf-gradient mb-4">
