@@ -494,7 +494,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/health", async (_req, res) => {
     const status = await getStorageStatus();
-    res.json({ ...status, version: "2025-04-09-v7", emailConfigured: !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) });
+    res.json({ ...status, version: "2025-04-09-v8", emailConfigured: !!process.env.BREVO_API_KEY });
   });
 
   // Test email — verify Resend config works
