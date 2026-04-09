@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Pencil, Check, X, Users, BarChart3, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Pencil, Check, X, Users, BarChart3, ShieldCheck, Mail, Bell, BellOff } from "lucide-react";
 
 interface RosterItem {
   id: number;
@@ -25,6 +25,8 @@ interface RosterItem {
   handicap: number;
   statsPublic: number;
   hasPin: boolean;
+  hasEmail: boolean;
+  notificationsEnabled: number;
 }
 
 export default function Roster() {
@@ -35,6 +37,9 @@ export default function Roster() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editHcp, setEditHcp] = useState("");
+  const [emailEditId, setEmailEditId] = useState<number | null>(null);
+  const [emailInput, setEmailInput] = useState("");
+  const [pinInput, setPinInput] = useState("");
 
   const { data: players } = useQuery<RosterItem[]>({
     queryKey: ["/api/roster"],
@@ -126,6 +131,53 @@ export default function Roster() {
       toast({ title: `${name} deactivated. Creating same name again will restore the account.` });
     } catch {
       toast({ title: "Failed to delete", variant: "destructive" });
+    }
+  };
+
+  const saveEmail = async (id: number) => {
+    if (!pinInput || pinInput.length !== 4) {
+      toast({ title: "Enter your 4-digit PIN", variant: "destructive" });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/roster/${id}/set-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pinInput, email: emailInput.trim() || null }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: err.error || "Failed", variant: "destructive" });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/roster"] });
+      setEmailEditId(null);
+      setPinInput("");
+      toast({ title: emailInput.trim() ? "Email saved" : "Email removed" });
+    } catch {
+      toast({ title: "Failed to save email", variant: "destructive" });
+    }
+  };
+
+  const toggleNotifications = async (id: number) => {
+    const pin = prompt("Enter your 4-digit PIN:");
+    if (!pin) return;
+    try {
+      const res = await fetch(`/api/roster/${id}/toggle-notifications`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: err.error || "Failed", variant: "destructive" });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/roster"] });
+      const data = await res.json();
+      toast({ title: data.notificationsEnabled ? "Notifications ON" : "Notifications OFF" });
+    } catch {
+      toast({ title: "Failed to toggle", variant: "destructive" });
     }
   };
 
@@ -252,6 +304,55 @@ export default function Roster() {
                             <span className="text-[10px] text-muted-foreground px-1">+{badges[p.id].length - 3}</span>
                           )}
                         </div>
+                      )}
+                      {/* Email/notification for claimed accounts */}
+                      {p.hasPin && (
+                        emailEditId === p.id ? (
+                          <div className="flex flex-wrap gap-1.5 mt-2 w-full">
+                            <Input
+                              type="email"
+                              placeholder="Email address"
+                              value={emailInput}
+                              onChange={e => setEmailInput(e.target.value)}
+                              className="h-9 flex-1 min-w-[140px] text-sm"
+                            />
+                            <Input
+                              type="password"
+                              placeholder="PIN"
+                              value={pinInput}
+                              onChange={e => setPinInput(e.target.value)}
+                              className="h-9 w-16 text-center text-sm"
+                              maxLength={4}
+                            />
+                            <Button size="sm" className="h-9 px-3" onClick={() => saveEmail(p.id)}>
+                              <Check className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setEmailEditId(null); setPinInput(""); }}>
+                              <X className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <button
+                              onClick={() => { setEmailEditId(p.id); setEmailInput(""); setPinInput(""); }}
+                              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                              title={p.hasEmail ? "Change email" : "Add email for notifications"}
+                            >
+                              <Mail className="w-3 h-3" />
+                              <span>{p.hasEmail ? "Email set" : "Add email"}</span>
+                            </button>
+                            {p.hasEmail && (
+                              <button
+                                onClick={() => toggleNotifications(p.id)}
+                                className={`flex items-center gap-1 text-[10px] transition-colors ${p.notificationsEnabled ? "text-green-600" : "text-muted-foreground hover:text-foreground"}`}
+                                title={p.notificationsEnabled ? "Notifications ON — tap to disable" : "Notifications OFF — tap to enable"}
+                              >
+                                {p.notificationsEnabled ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
+                                <span>{p.notificationsEnabled ? "ON" : "OFF"}</span>
+                              </button>
+                            )}
+                          </div>
+                        )
                       )}
                     </div>
                     <div className="flex gap-1">
