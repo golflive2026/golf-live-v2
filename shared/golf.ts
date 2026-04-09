@@ -105,23 +105,37 @@ export interface SpecialBetResult { hole: number; type: "longest_drive" | "close
 
 export function computeSpecialBets(
   allScores: Score[], players: Player[], longestDriveBet: number, closestPinBet: number,
-  course: CourseData, ldCtpMode: string = "distance",
+  course: CourseData,
 ) {
   const scoresMap = buildScoresMap(allScores);
   const playerTotals = new Map<number, number>();
   players.forEach(p => playerTotals.set(p.id, 0));
 
-  function findWinnerByDistance(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", findMin: boolean): SpecialBetResult {
+  function findWinner(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", findMin: boolean): SpecialBetResult {
+    // Auto-detect per hole: if any player has marker >= 999, that's a winner-button tap (all participate)
+    // Otherwise compare actual distances (only participants who entered values)
+    let markerWinnerId: number | null = null, markerWinnerName = "-";
     let bestId: number | null = null, bestDist = findMin ? Infinity : 0, bestName = "-";
     const participants: number[] = [];
+
     for (const p of players) {
       const val = scoresMap.get(p.id)?.get(hole)?.[field];
-      if (val && val > 0) {
+      if (val && val >= 999) { markerWinnerId = p.id; markerWinnerName = p.name; }
+      if (val && val > 0 && val < 999) {
         participants.push(p.id);
         if (findMin ? val < bestDist : val > bestDist) { bestDist = val; bestId = p.id; bestName = p.name; }
       }
     }
-    // Distance mode: only participants pay/receive
+
+    // Winner button used → all players participate
+    if (markerWinnerId) {
+      const payout = betAmt * (players.length - 1);
+      playerTotals.set(markerWinnerId, (playerTotals.get(markerWinnerId) || 0) + payout);
+      for (const p of players) { if (p.id !== markerWinnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
+      return { hole, type, winnerId: markerWinnerId, winnerName: markerWinnerName, winnerValue: 0, payout };
+    }
+
+    // Distance mode → only participants who entered values
     const payout = bestId ? betAmt * (participants.length - 1) : 0;
     if (bestId) {
       playerTotals.set(bestId, (playerTotals.get(bestId) || 0) + payout);
@@ -129,26 +143,6 @@ export function computeSpecialBets(
     }
     return { hole, type, winnerId: bestId, winnerName: bestName, winnerValue: bestDist === Infinity ? 0 : bestDist, payout };
   }
-
-  function findWinnerByMarker(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin"): SpecialBetResult {
-    // Simple mode: winner is marked with value 999, ALL players participate
-    let winnerId: number | null = null, winnerName = "-";
-    for (const p of players) {
-      const val = scoresMap.get(p.id)?.get(hole)?.[field];
-      if (val && val >= 999) { winnerId = p.id; winnerName = p.name; break; }
-    }
-    const payout = winnerId ? betAmt * (players.length - 1) : 0;
-    if (winnerId) {
-      playerTotals.set(winnerId, (playerTotals.get(winnerId) || 0) + payout);
-      for (const p of players) { if (p.id !== winnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
-    }
-    return { hole, type, winnerId, winnerName, winnerValue: 0, payout };
-  }
-
-  const isSimple = ldCtpMode === "simple";
-  const findWinner = isSimple
-    ? (hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", _findMin: boolean) => findWinnerByMarker(hole, field, betAmt, type)
-    : findWinnerByDistance;
 
   const longestDrive = course.longestDriveHoles.map(h => findWinner(h, "longestDrive", longestDriveBet, "longest_drive", false));
   const closestPin = course.par3Holes.map(h => findWinner(h, "closestPin", closestPinBet, "closest_pin", true));
@@ -159,12 +153,12 @@ export interface SettlementEntry { playerId: number; playerName: string; matchPl
 
 export function computeSettlement(
   entries: LeaderboardEntry[], allScores: Score[], players: Player[],
-  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number; ldCtpMode?: string },
+  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number },
   course: CourseData,
 ): SettlementEntry[] {
   const matchPlay = computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
   const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
-  const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course, game.ldCtpMode);
+  const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course);
   const settlement: SettlementEntry[] = players.map(p => {
     const mp = matchPlay.find(r => r.playerId === p.id);
     const be = birdieEagle.find(r => r.playerId === p.id);
@@ -253,7 +247,7 @@ export function computeStablefordMatchPlay(entries: StablefordEntry[], front9Bet
 
 export function computeStablefordSettlement(
   entries: StablefordEntry[], allScores: Score[], players: Player[],
-  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number },
+  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number; ldCtpMode?: string },
   course: CourseData,
 ): SettlementEntry[] {
   const matchPlay = computeStablefordMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);

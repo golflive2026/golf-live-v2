@@ -215,6 +215,64 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
         );
       })}
 
+      {/* LD/CTP winner buttons on applicable holes — all modes */}
+      {course.longestDriveHoles.includes(currentHole) && allScoredThisHole && (
+        <div className="bg-muted/30 rounded-lg p-3">
+          <p className="text-[10px] text-muted-foreground font-medium mb-1.5">💪 Longest Drive — Who Won?</p>
+          <div className="flex flex-wrap gap-1.5">
+            {players.map(p => {
+              const isWinner = scores.find(s => s.playerId === p.id && s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
+              return (
+                <button key={p.id}
+                  onClick={async () => {
+                    for (const pl of players) {
+                      const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                      if (ps?.longestDrive && ps.longestDrive >= 999) {
+                        await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
+                      }
+                    }
+                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: 999 });
+                    await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  }`}>
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {course.par3Holes.includes(currentHole) && allScoredThisHole && (
+        <div className="bg-muted/30 rounded-lg p-3">
+          <p className="text-[10px] text-muted-foreground font-medium mb-1.5">📍 Closest to Pin — Who Won?</p>
+          <div className="flex flex-wrap gap-1.5">
+            {players.map(p => {
+              const isWinner = scores.find(s => s.playerId === p.id && s.hole === currentHole && s.closestPin && s.closestPin >= 999);
+              return (
+                <button key={p.id}
+                  onClick={async () => {
+                    for (const pl of players) {
+                      const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                      if (ps?.closestPin && ps.closestPin >= 999) {
+                        await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
+                      }
+                    }
+                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, closestPin: 999 });
+                    await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  }`}>
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-3 pt-2">
         <Button
           variant="secondary"

@@ -423,17 +423,6 @@ export default function Setup() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">LD/CTP Mode</Label>
-                    <Select value={ldCtpMode} onValueChange={setLdCtpMode}>
-                      <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="simple">Quick (winner only)</SelectItem>
-                        <SelectItem value="distance">Detailed (distances)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="flex items-center justify-between">
                     <Label className="text-sm">Carryover (ties roll forward)</Label>
                     <button
                       onClick={() => setCarryoverEnabled(!carryoverEnabled)}
