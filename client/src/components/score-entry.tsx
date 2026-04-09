@@ -201,115 +201,129 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             </div>
           </div>
 
-          {/* Longest Drive — winner buttons + optional distance */}
+          {/* Longest Drive — winner buttons + distance per player */}
           {isLongestDrive && (() => {
             const ldWinner = scores.find(s => s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
+            const setLdWinner = async (winnerId: number) => {
+              try {
+                const alreadyWinner = ldWinner?.playerId === winnerId;
+                // Clear ALL LD values on this hole (distances + markers) for clean state
+                for (const pl of players) {
+                  const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                  if (ps?.longestDrive) {
+                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
+                  }
+                }
+                // Set new winner (or deselect if same player tapped again)
+                if (!alreadyWinner) {
+                  await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: winnerId, hole: currentHole, longestDrive: 999 });
+                }
+                await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+              } catch (e) { console.error("LD save failed", e); }
+            };
             return (
               <div className="border-t border-border pt-4 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Ruler className="w-4 h-4 text-primary" />
                   <span className="text-sm font-medium">Longest Drive</span>
                 </div>
-                {/* Quick winner buttons — all players participate */}
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-1.5">Tap winner (all players in bet):</p>
+                  <p className="text-[10px] text-muted-foreground mb-1.5">Tap winner (all players in bet) · tap again to clear:</p>
                   <div className="flex flex-wrap gap-1.5">
+                    {players.map(p => (
+                      <button key={p.id} onClick={() => setLdWinner(p.id)}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          ldWinner?.playerId === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        }`}>
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <details className="text-sm">
+                  <summary className="text-[10px] text-muted-foreground cursor-pointer">Or enter distances per player (exclude non-participants)</summary>
+                  <div className="space-y-2 mt-2">
                     {players.map(p => {
-                      const isWinner = ldWinner?.playerId === p.id;
+                      const ps = scores.find(s => s.playerId === p.id && s.hole === currentHole);
+                      const dist = ps?.longestDrive && ps.longestDrive < 999 ? ps.longestDrive : null;
                       return (
-                        <button key={p.id}
-                          onClick={async () => {
-                            for (const pl of players) {
-                              const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
-                              if (ps?.longestDrive && ps.longestDrive >= 999) {
-                                await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
-                              }
-                            }
-                            await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: 999 });
-                            queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
-                          }}
-                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                            isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          }`}>
-                          {p.name}
-                        </button>
+                        <div key={p.id} className="flex items-center gap-2">
+                          <span className="text-xs font-medium w-20 truncate">{p.name}</span>
+                          <Input type="number" placeholder="meters" defaultValue={dist ?? ""}
+                            key={`ld-${p.id}-${currentHole}-${dist}`}
+                            onBlur={e => {
+                              const val = e.target.value ? parseFloat(e.target.value) : null;
+                              apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: val });
+                              queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                            }}
+                            className="h-10 text-sm flex-1" min={0} step={1} />
+                        </div>
                       );
                     })}
                   </div>
-                </div>
-                {/* Distance entry — only participants who enter a value */}
-                <details className="text-sm">
-                  <summary className="text-[10px] text-muted-foreground cursor-pointer">Or enter distance (exclude non-participants)</summary>
-                  <Input
-                    data-testid="input-longest-drive"
-                    type="number"
-                    placeholder="Distance in meters"
-                    defaultValue={longestDrive && longestDrive < 999 ? longestDrive : ""}
-                    key={`ld-${selectedPlayerId}-${currentHole}-${longestDrive}`}
-                    onBlur={e => {
-                      const val = e.target.value ? parseFloat(e.target.value) : null;
-                      saveScore({ longestDrive: val });
-                    }}
-                    className="h-12 text-lg mt-2"
-                    min={0} step={1}
-                  />
                 </details>
               </div>
             );
           })()}
 
-          {/* Closest to Pin — winner buttons + optional distance */}
+          {/* Closest to Pin — winner buttons + distance per player */}
           {isClosestPin && (() => {
             const ctpWinner = scores.find(s => s.hole === currentHole && s.closestPin && s.closestPin >= 999);
+            const setCtpWinner = async (winnerId: number) => {
+              try {
+                const alreadyWinner = ctpWinner?.playerId === winnerId;
+                for (const pl of players) {
+                  const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                  if (ps?.closestPin) {
+                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
+                  }
+                }
+                if (!alreadyWinner) {
+                  await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: winnerId, hole: currentHole, closestPin: 999 });
+                }
+                await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+              } catch (e) { console.error("CTP save failed", e); }
+            };
             return (
               <div className="border-t border-border pt-4 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Target className="w-4 h-4 text-accent-foreground" />
                   <span className="text-sm font-medium">Closest to Pin</span>
                 </div>
-                {/* Quick winner buttons — all players participate */}
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-1.5">Tap winner (all players in bet):</p>
+                  <p className="text-[10px] text-muted-foreground mb-1.5">Tap winner (all players in bet) · tap again to clear:</p>
                   <div className="flex flex-wrap gap-1.5">
+                    {players.map(p => (
+                      <button key={p.id} onClick={() => setCtpWinner(p.id)}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          ctpWinner?.playerId === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        }`}>
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <details className="text-sm">
+                  <summary className="text-[10px] text-muted-foreground cursor-pointer">Or enter distances per player (exclude non-participants)</summary>
+                  <div className="space-y-2 mt-2">
                     {players.map(p => {
-                      const isWinner = ctpWinner?.playerId === p.id;
+                      const ps = scores.find(s => s.playerId === p.id && s.hole === currentHole);
+                      const dist = ps?.closestPin && ps.closestPin < 999 ? ps.closestPin : null;
                       return (
-                        <button key={p.id}
-                          onClick={async () => {
-                            for (const pl of players) {
-                              const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
-                              if (ps?.closestPin && ps.closestPin >= 999) {
-                                await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
-                              }
-                            }
-                            await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, closestPin: 999 });
-                            queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
-                          }}
-                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                            isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          }`}>
-                          {p.name}
-                        </button>
+                        <div key={p.id} className="flex items-center gap-2">
+                          <span className="text-xs font-medium w-20 truncate">{p.name}</span>
+                          <Input type="number" placeholder="cm" defaultValue={dist ?? ""}
+                            key={`cp-${p.id}-${currentHole}-${dist}`}
+                            onBlur={e => {
+                              const val = e.target.value ? parseFloat(e.target.value) : null;
+                              apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, closestPin: val });
+                              queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                            }}
+                            className="h-10 text-sm flex-1" min={0} step={1} />
+                        </div>
                       );
                     })}
                   </div>
-                </div>
-                {/* Distance entry — only participants who enter a value */}
-                <details className="text-sm">
-                  <summary className="text-[10px] text-muted-foreground cursor-pointer">Or enter distance (exclude non-participants)</summary>
-                  <Input
-                    data-testid="input-closest-pin"
-                    type="number"
-                    placeholder="Distance in cm"
-                    defaultValue={closestPin && closestPin < 999 ? closestPin : ""}
-                    key={`cp-${selectedPlayerId}-${currentHole}-${closestPin}`}
-                    onBlur={e => {
-                      const val = e.target.value ? parseFloat(e.target.value) : null;
-                      saveScore({ closestPin: val });
-                    }}
-                    className="h-12 text-lg mt-2"
-                    min={0} step={1}
-                  />
                 </details>
               </div>
             );

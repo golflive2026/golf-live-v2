@@ -215,24 +215,30 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
         );
       })}
 
-      {/* LD/CTP winner buttons on applicable holes — all modes */}
-      {course.longestDriveHoles.includes(currentHole) && allScoredThisHole && (
+      {/* LD/CTP winner buttons — always visible on applicable holes, all modes */}
+      {course.longestDriveHoles.includes(currentHole) && (
         <div className="bg-muted/30 rounded-lg p-3">
-          <p className="text-[10px] text-muted-foreground font-medium mb-1.5">💪 Longest Drive — Who Won?</p>
+          <p className="text-[10px] text-muted-foreground font-medium mb-1.5">💪 Longest Drive — tap winner · tap again to clear</p>
           <div className="flex flex-wrap gap-1.5">
             {players.map(p => {
-              const isWinner = scores.find(s => s.playerId === p.id && s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
+              const isWinner = !!scores.find(s => s.playerId === p.id && s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
               return (
                 <button key={p.id}
                   onClick={async () => {
-                    for (const pl of players) {
-                      const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
-                      if (ps?.longestDrive && ps.longestDrive >= 999) {
-                        await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
+                    try {
+                      // Clear ALL LD values on this hole
+                      for (const pl of players) {
+                        const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                        if (ps?.longestDrive) {
+                          await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
+                        }
                       }
-                    }
-                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: 999 });
-                    await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                      // Set new winner (or leave cleared if same player tapped again)
+                      if (!isWinner) {
+                        await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: 999 });
+                      }
+                      await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                    } catch (e) { console.error("LD save failed", e); }
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
@@ -244,23 +250,27 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
           </div>
         </div>
       )}
-      {course.par3Holes.includes(currentHole) && allScoredThisHole && (
+      {course.par3Holes.includes(currentHole) && (
         <div className="bg-muted/30 rounded-lg p-3">
-          <p className="text-[10px] text-muted-foreground font-medium mb-1.5">📍 Closest to Pin — Who Won?</p>
+          <p className="text-[10px] text-muted-foreground font-medium mb-1.5">📍 Closest to Pin — tap winner · tap again to clear</p>
           <div className="flex flex-wrap gap-1.5">
             {players.map(p => {
-              const isWinner = scores.find(s => s.playerId === p.id && s.hole === currentHole && s.closestPin && s.closestPin >= 999);
+              const isWinner = !!scores.find(s => s.playerId === p.id && s.hole === currentHole && s.closestPin && s.closestPin >= 999);
               return (
                 <button key={p.id}
                   onClick={async () => {
-                    for (const pl of players) {
-                      const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
-                      if (ps?.closestPin && ps.closestPin >= 999) {
-                        await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
+                    try {
+                      for (const pl of players) {
+                        const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                        if (ps?.closestPin) {
+                          await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
+                        }
                       }
-                    }
-                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, closestPin: 999 });
-                    await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                      if (!isWinner) {
+                        await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, closestPin: 999 });
+                      }
+                      await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                    } catch (e) { console.error("CTP save failed", e); }
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"

@@ -14,6 +14,7 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: "5mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
@@ -109,6 +110,22 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+
+      // Keep alive on Render free tier — self-ping every 10 min ONLY when active games exist
+      const renderUrl = process.env.RENDER_EXTERNAL_URL;
+      if (renderUrl) {
+        setInterval(async () => {
+          try {
+            const { storage } = require("./storage");
+            const games = await storage.listGames();
+            const hasActive = games.some((g: any) => g.status === "active");
+            if (hasActive) {
+              await fetch(`${renderUrl}/api/health`);
+            }
+          } catch {}
+        }, 10 * 60 * 1000);
+        log("Smart keep-alive enabled (pings only during active games)");
+      }
     },
   );
 })();
