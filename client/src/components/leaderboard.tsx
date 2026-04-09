@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { type CourseData, type Player, type Score } from "@shared/schema";
-import { computeLeaderboard, getScoreColorClass, getScoreBgClass, type LeaderboardEntry } from "@/lib/golf";
+import { type CourseData, type Player, type Score, type Game, type Achievement } from "@shared/schema";
+import { computeLeaderboard, computeStablefordLeaderboard, getScoreColorClass, getScoreBgClass, type LeaderboardEntry, type StablefordEntry } from "@/lib/golf";
 import { ChevronDown, ChevronUp, Trophy } from "lucide-react";
 
 interface Props {
   players: Player[];
   scores: Score[];
   course: CourseData;
+  game: Game;
+  achievements?: Achievement[];
 }
 
 function PlayerDetail({ entry, course }: { entry: LeaderboardEntry; course: CourseData }) {
@@ -171,9 +173,14 @@ function getPlayerComment(entry: LeaderboardEntry, position: number, total: numb
   return null;
 }
 
-export default function Leaderboard({ players, scores, course }: Props) {
+export default function Leaderboard({ players, scores, course, game, achievements }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const entries = computeLeaderboard(players, scores, course);
+  const isStableford = game.gameMode === "stableford";
+  const isAction = game.gameMode === "action";
+
+  const entries: (LeaderboardEntry | StablefordEntry)[] = isStableford
+    ? computeStablefordLeaderboard(players, scores, course)
+    : computeLeaderboard(players, scores, course);
 
   if (players.length === 0) {
     return <div className="text-center py-12 text-muted-foreground">No players yet</div>;
@@ -181,16 +188,20 @@ export default function Leaderboard({ players, scores, course }: Props) {
 
   return (
     <div className="space-y-2">
+      {isAction && (
+        <div className="text-xs text-muted-foreground text-center py-1 mb-1">Action mode — see Dots tab for full breakdown</div>
+      )}
       <div className="grid grid-cols-[auto_1fr_auto_auto] gap-2 px-3 py-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
         <div className="w-6">#</div>
         <div>Player</div>
-        <div className="text-right w-16">Net</div>
+        <div className="text-right w-16">{isStableford ? "Pts" : "Net"}</div>
         <div className="text-right w-16">Gross</div>
       </div>
 
       {entries.map((entry, idx) => {
         const expanded = expandedId === entry.player.id;
         const position = idx + 1;
+        const stablefordEntry = isStableford ? (entry as StablefordEntry) : null;
 
         return (
           <Card
@@ -234,15 +245,17 @@ export default function Leaderboard({ players, scores, course }: Props) {
 
                 <div className="text-right w-16">
                   <div className="text-sm font-bold" data-testid={`text-net-${entry.player.id}`}>
-                    {entry.holesPlayed > 0 ? entry.netTotal : "-"}
+                    {entry.holesPlayed > 0 ? (stablefordEntry ? stablefordEntry.stablefordTotal : entry.netTotal) : "-"}
                   </div>
-                  <div className={`text-[10px] font-semibold ${
-                    entry.netVsParDisplay.startsWith("-") ? "score-birdie" :
-                    entry.netVsParDisplay === "E" ? "score-par" :
-                    entry.netVsParDisplay !== "-" ? "score-bogey" : ""
-                  }`} data-testid={`text-vspar-${entry.player.id}`}>
-                    {entry.netVsParDisplay !== "-" ? entry.netVsParDisplay : ""}
-                  </div>
+                  {!isStableford && (
+                    <div className={`text-[10px] font-semibold ${
+                      entry.netVsParDisplay.startsWith("-") ? "score-birdie" :
+                      entry.netVsParDisplay === "E" ? "score-par" :
+                      entry.netVsParDisplay !== "-" ? "score-bogey" : ""
+                    }`} data-testid={`text-vspar-${entry.player.id}`}>
+                      {entry.netVsParDisplay !== "-" ? entry.netVsParDisplay : ""}
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-right w-16">
@@ -264,23 +277,42 @@ export default function Leaderboard({ players, scores, course }: Props) {
 
               {expanded && (
                 <div className="mt-3 pt-3 border-t border-border">
-                  <div className="grid grid-cols-4 gap-2 text-center mb-3">
-                    <div>
-                      <div className="text-[10px] text-muted-foreground uppercase">F9 Net</div>
-                      <div className="text-sm font-bold">{entry.holesPlayed > 0 ? entry.front9Net : "-"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground uppercase">B9 Net</div>
-                      <div className="text-sm font-bold">{entry.holesPlayed > 0 ? entry.back9Net : "-"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground uppercase">F9 Gross</div>
-                      <div className="text-sm font-bold text-muted-foreground">{entry.holesPlayed > 0 ? entry.front9Gross : "-"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground uppercase">B9 Gross</div>
-                      <div className="text-sm font-bold text-muted-foreground">{entry.holesPlayed > 0 ? entry.back9Gross : "-"}</div>
-                    </div>
+                  <div className={`grid ${isStableford ? "grid-cols-3" : "grid-cols-4"} gap-2 text-center mb-3`}>
+                    {isStableford && stablefordEntry ? (
+                      <>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">F9 Pts</div>
+                          <div className="text-sm font-bold">{entry.holesPlayed > 0 ? stablefordEntry.front9Stableford : "-"}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">B9 Pts</div>
+                          <div className="text-sm font-bold">{entry.holesPlayed > 0 ? stablefordEntry.back9Stableford : "-"}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">Total Pts</div>
+                          <div className="text-sm font-bold">{entry.holesPlayed > 0 ? stablefordEntry.stablefordTotal : "-"}</div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">F9 Net</div>
+                          <div className="text-sm font-bold">{entry.holesPlayed > 0 ? entry.front9Net : "-"}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">B9 Net</div>
+                          <div className="text-sm font-bold">{entry.holesPlayed > 0 ? entry.back9Net : "-"}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">F9 Gross</div>
+                          <div className="text-sm font-bold text-muted-foreground">{entry.holesPlayed > 0 ? entry.front9Gross : "-"}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground uppercase">B9 Gross</div>
+                          <div className="text-sm font-bold text-muted-foreground">{entry.holesPlayed > 0 ? entry.back9Gross : "-"}</div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <PlayerDetail entry={entry} course={course} />
                 </div>

@@ -1,10 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type CourseData, type Game, type Player, type Score } from "@shared/schema";
-import { computeLeaderboard, computeSettlement } from "@/lib/golf";
+import { type CourseData, type Game, type Player, type Score, type Achievement, DEFAULT_DOTS } from "@shared/schema";
+import {
+  computeLeaderboard,
+  computeSettlement,
+  computeStablefordLeaderboard,
+  computeStablefordSettlement,
+  computeActionDots,
+  computeActionSettlement,
+  type DotConfig,
+} from "@/lib/golf";
 import ClaimProfile from "@/components/claim-profile";
 import { Receipt, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 
-interface Props { game: Game; players: Player[]; scores: Score[]; course: CourseData; }
+interface Props { game: Game; players: Player[]; scores: Score[]; course: CourseData; achievements?: Achievement[]; }
 
 function MoneyDisplay({ amount, size = "sm" }: { amount: number; size?: "sm" | "lg" }) {
   const color = amount > 0 ? "text-green-600 dark:text-green-400" : amount < 0 ? "text-red-500" : "text-muted-foreground";
@@ -13,21 +21,55 @@ function MoneyDisplay({ amount, size = "sm" }: { amount: number; size?: "sm" | "
   return <span className={`${color} ${cls} tabular-nums`}>{prefix}{amount.toFixed(0)}</span>;
 }
 
-export default function Settlement({ game, players, scores, course }: Props) {
-  const entries = computeLeaderboard(players, scores, course);
-  const settlement = computeSettlement(entries, scores, players, game, course);
+export default function Settlement({ game, players, scores, course, achievements }: Props) {
   if (players.length === 0) return <div className="text-center py-12 text-muted-foreground">No players yet</div>;
+
+  const isAction = game.gameMode === "action";
+  const isStableford = game.gameMode === "stableford";
+
+  let settlement: ReturnType<typeof computeSettlement>;
+  let entries: ReturnType<typeof computeLeaderboard>;
+
+  if (isAction) {
+    const dotConfig: DotConfig = {
+      dotBirdie: game.dotBirdie ?? DEFAULT_DOTS.dotBirdie,
+      dotEagle: game.dotEagle ?? DEFAULT_DOTS.dotEagle,
+      dotAlbatross: game.dotAlbatross ?? DEFAULT_DOTS.dotAlbatross,
+      dotDoubleBogey: game.dotDoubleBogey ?? DEFAULT_DOTS.dotDoubleBogey,
+      dotSandy: game.dotSandy ?? DEFAULT_DOTS.dotSandy,
+      dotChipIn: game.dotChipIn ?? DEFAULT_DOTS.dotChipIn,
+      dotGreenie: game.dotGreenie ?? DEFAULT_DOTS.dotGreenie,
+      dotLongestDrive: game.dotLongestDrive ?? DEFAULT_DOTS.dotLongestDrive,
+      dotClosestPin: game.dotClosestPin ?? DEFAULT_DOTS.dotClosestPin,
+      dotThreePutt: game.dotThreePutt ?? DEFAULT_DOTS.dotThreePutt,
+      dotWater: game.dotWater ?? DEFAULT_DOTS.dotWater,
+      dotOb: game.dotOb ?? DEFAULT_DOTS.dotOb,
+    };
+    const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course);
+    const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
+    settlement = computeActionSettlement(dotEntries, dotValue);
+    entries = computeLeaderboard(players, scores, course);
+  } else if (isStableford) {
+    const stablefordEntries = computeStablefordLeaderboard(players, scores, course);
+    settlement = computeStablefordSettlement(stablefordEntries, scores, players, game, course);
+    entries = stablefordEntries;
+  } else {
+    entries = computeLeaderboard(players, scores, course);
+    settlement = computeSettlement(entries, scores, players, game, course);
+  }
+
   const winners = settlement.filter(s => s.grandTotal > 0);
   const losers = settlement.filter(s => s.grandTotal < 0);
   const allComplete = entries.every(e => e.holesPlayed === 18);
   const minHoles = entries.length > 0 ? Math.min(...entries.map(e => e.holesPlayed)) : 0;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2"><Receipt className="w-5 h-5 text-primary" /><h2 className="text-base font-bold">Final Settlement</h2></div>
       {!allComplete && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-xs">
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span>Game in progress ({minHoles}/18 holes). Match play bets settle after all 18 holes are complete.</span>
+          <span>Game in progress ({minHoles}/18 holes). {isAction ? "Dot settlements update as scores are entered." : "Match play bets settle after all 18 holes are complete."}</span>
         </div>
       )}
       {settlement.map(s => (
@@ -44,12 +86,18 @@ export default function Settlement({ game, players, scores, course }: Props) {
               </div>
               <MoneyDisplay amount={s.grandTotal} size="lg" />
             </div>
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <div><div className="text-[10px] text-muted-foreground uppercase">Match</div><MoneyDisplay amount={s.matchPlay} /></div>
-              <div><div className="text-[10px] text-muted-foreground uppercase">Birdies</div><MoneyDisplay amount={s.birdies} /></div>
-              <div><div className="text-[10px] text-muted-foreground uppercase">Eagles</div><MoneyDisplay amount={s.eagles} /></div>
-              <div><div className="text-[10px] text-muted-foreground uppercase">Special</div><MoneyDisplay amount={s.specialBets} /></div>
-            </div>
+            {isAction ? (
+              <div className="grid grid-cols-1 gap-2 text-center">
+                <div><div className="text-[10px] text-muted-foreground uppercase">Dots</div><MoneyDisplay amount={s.matchPlay} /></div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div><div className="text-[10px] text-muted-foreground uppercase">Match</div><MoneyDisplay amount={s.matchPlay} /></div>
+                <div><div className="text-[10px] text-muted-foreground uppercase">Birdies</div><MoneyDisplay amount={s.birdies} /></div>
+                <div><div className="text-[10px] text-muted-foreground uppercase">Eagles</div><MoneyDisplay amount={s.eagles} /></div>
+                <div><div className="text-[10px] text-muted-foreground uppercase">Special</div><MoneyDisplay amount={s.specialBets} /></div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ))}

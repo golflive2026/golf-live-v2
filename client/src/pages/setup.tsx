@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { DEFAULT_BETS, type RosterPlayer } from "@shared/schema";
+import { DEFAULT_BETS, DEFAULT_DOTS, type RosterPlayer } from "@shared/schema";
 import { ArrowLeft, Plus, Trash2, Play, DollarSign, Users, MapPin, UserPlus, Pencil } from "lucide-react";
 
 interface PlayerInput {
@@ -37,6 +37,8 @@ export default function Setup() {
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("18");
   const [bets, setBets] = useState({ ...DEFAULT_BETS });
+  const [gameMode, setGameMode] = useState<"stroke" | "stableford" | "action">("stroke");
+  const [dots, setDots] = useState<Record<string, number>>({ ...DEFAULT_DOTS });
   const [creating, setCreating] = useState(false);
   const [editingHcpIdx, setEditingHcpIdx] = useState<number | null>(null);
   const [editHcpValue, setEditHcpValue] = useState("");
@@ -108,6 +110,7 @@ export default function Setup() {
         name: gameName || "Golf Game",
         date: gameDate,
         courseId,
+        gameMode,
         first9Bet: bets.first9Bet,
         second9Bet: bets.second9Bet,
         wholeGameBet: bets.wholeGameBet,
@@ -115,6 +118,7 @@ export default function Setup() {
         eaglePot: bets.eaglePot,
         longestDriveBet: bets.longestDriveBet,
         closestPinBet: bets.closestPinBet,
+        ...(gameMode === "action" ? dots : {}),
       });
       const game = await gameRes.json();
 
@@ -229,6 +233,23 @@ export default function Setup() {
                   <p className="text-xs text-muted-foreground mt-1">{selectedCourse.location} · Par {selectedCourse.totalPar}</p>
                 )}
               </div>
+              <div>
+                <Label className="mb-2 block">Game Mode</Label>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {([
+                    { mode: "stroke" as const, icon: "🏌️", label: "Stroke", desc: "Classic net scoring" },
+                    { mode: "stableford" as const, icon: "⭐", label: "Stableford", desc: "Points per hole" },
+                    { mode: "action" as const, icon: "🎯", label: "Action", desc: "Dots & side bets" },
+                  ]).map(m => (
+                    <button key={m.mode} onClick={() => setGameMode(m.mode)}
+                      className={`p-3 rounded-lg border-2 text-center transition-all ${gameMode === m.mode ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                      <div className="text-2xl mb-1">{m.icon}</div>
+                      <div className="text-xs font-bold">{m.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{m.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <Button
                 data-testid="button-next-players"
                 className="w-full h-12 font-semibold golf-gradient text-white border-0"
@@ -249,6 +270,25 @@ export default function Setup() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {!isAdvanced && (
+                <div>
+                  <Label className="mb-2 block text-sm font-medium">Game Mode</Label>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {([
+                      { mode: "stroke" as const, icon: "🏌️", label: "Stroke", desc: "Classic net scoring" },
+                      { mode: "stableford" as const, icon: "⭐", label: "Stableford", desc: "Points per hole" },
+                      { mode: "action" as const, icon: "🎯", label: "Action", desc: "Dots & side bets" },
+                    ]).map(m => (
+                      <button key={m.mode} onClick={() => setGameMode(m.mode)}
+                        className={`p-3 rounded-lg border-2 text-center transition-all ${gameMode === m.mode ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                        <div className="text-2xl mb-1">{m.icon}</div>
+                        <div className="text-xs font-bold">{m.label}</div>
+                        <div className="text-[10px] text-muted-foreground">{m.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {players.length > 0 && (
                 <div className="space-y-2">
                   {players.map((p, i) => (
@@ -365,24 +405,61 @@ export default function Setup() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <DollarSign className="w-4 h-4" />
-                Bet Amounts (per player)
+                {gameMode === "action" ? "Dot Values (per player)" : "Bet Amounts (per player)"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {betFields.map(f => (
-                <div key={f.key} className="flex items-center justify-between">
-                  <Label className="text-sm">{f.label}</Label>
-                  <Input
-                    data-testid={`input-bet-${f.key}`}
-                    type="number"
-                    value={bets[f.key]}
-                    onChange={e => setBets({ ...bets, [f.key]: parseFloat(e.target.value) || 0 })}
-                    className="h-10 w-24 text-center"
-                    min={0}
-                    step={1}
-                  />
+              {gameMode === "action" ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-bold">Point Value (€ per dot)</Label>
+                    <Input type="number" value={dots.dotValue} onChange={e => setDots({...dots, dotValue: parseFloat(e.target.value) || 1})} className="h-10 w-24 text-center" min={0.5} step={0.5} />
+                  </div>
+                  <div className="text-xs text-muted-foreground font-medium mt-3 mb-1">Earn Points For</div>
+                  {[
+                    { key: "dotBirdie", label: "Birdie (net)" },
+                    { key: "dotEagle", label: "Eagle (net)" },
+                    { key: "dotAlbatross", label: "Albatross (net)" },
+                    { key: "dotSandy", label: "Sandy (par from bunker)" },
+                    { key: "dotChipIn", label: "Chip-in" },
+                    { key: "dotGreenie", label: "Greenie (CTP + par)" },
+                    { key: "dotLongestDrive", label: "Longest Drive" },
+                    { key: "dotClosestPin", label: "Closest to Pin" },
+                  ].map(f => (
+                    <div key={f.key} className="flex items-center justify-between">
+                      <Label className="text-sm">{f.label}</Label>
+                      <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+                    </div>
+                  ))}
+                  <div className="text-xs text-muted-foreground font-medium mt-3 mb-1">Lose Points For</div>
+                  {[
+                    { key: "dotDoubleBogey", label: "Double Bogey+ (net)" },
+                    { key: "dotThreePutt", label: "3-Putt" },
+                    { key: "dotWater", label: "Water Penalty" },
+                    { key: "dotOb", label: "Out of Bounds" },
+                  ].map(f => (
+                    <div key={f.key} className="flex items-center justify-between">
+                      <Label className="text-sm">{f.label}</Label>
+                      <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                betFields.map(f => (
+                  <div key={f.key} className="flex items-center justify-between">
+                    <Label className="text-sm">{f.label}</Label>
+                    <Input
+                      data-testid={`input-bet-${f.key}`}
+                      type="number"
+                      value={bets[f.key]}
+                      onChange={e => setBets({ ...bets, [f.key]: parseFloat(e.target.value) || 0 })}
+                      className="h-10 w-24 text-center"
+                      min={0}
+                      step={1}
+                    />
+                  </div>
+                ))
+              )}
 
               <div className="pt-4 flex gap-2">
                 <Button variant="secondary" className="flex-1 h-12" onClick={() => setStep("players")} data-testid="button-back-players">

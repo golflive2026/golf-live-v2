@@ -10,6 +10,14 @@ export {
   computeBirdieEagle,
   computeSpecialBets,
   computeSettlement,
+  // Stableford
+  computeStablefordLeaderboard,
+  computeStablefordMatchPlay,
+  computeStablefordSettlement,
+  // Action/Dots
+  buildAchievementsMap,
+  computeActionDots,
+  computeActionSettlement,
 } from "@shared/golf";
 
 export type {
@@ -18,6 +26,11 @@ export type {
   BirdieEagleResult,
   SpecialBetResult,
   SettlementEntry,
+  // Stableford
+  StablefordEntry,
+  // Action/Dots
+  DotConfig,
+  ActionDotEntry,
 } from "@shared/golf";
 
 // CSS-dependent helpers (client-only)

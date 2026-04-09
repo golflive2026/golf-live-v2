@@ -63,6 +63,35 @@ export const DEFAULT_BETS = {
   closestPinBet: 3,
 } as const;
 
+export const DEFAULT_DOTS = {
+  dotValue: 1,
+  dotBirdie: 1,
+  dotEagle: 2,
+  dotAlbatross: 5,
+  dotDoubleBogey: -1,
+  dotSandy: 1,
+  dotChipIn: 1,
+  dotGreenie: 1,
+  dotLongestDrive: 1,
+  dotClosestPin: 1,
+  dotThreePutt: -1,
+  dotWater: -1,
+  dotOb: -1,
+} as const;
+
+export type GameMode = "stroke" | "stableford" | "action";
+
+// Stableford point calculation based on NET score vs par
+export function getStablefordPoints(netScore: number, par: number): number {
+  const diff = netScore - par;
+  if (diff >= 2) return 0;   // net double bogey or worse
+  if (diff === 1) return 1;  // net bogey
+  if (diff === 0) return 2;  // net par
+  if (diff === -1) return 3; // net birdie
+  if (diff === -2) return 4; // net eagle
+  return 5;                   // net albatross or better
+}
+
 // Games table
 export const games = sqliteTable("games", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -70,6 +99,7 @@ export const games = sqliteTable("games", {
   date: text("date").notNull(),
   code: text("code").notNull().unique(),
   courseId: text("course_id").notNull().default("st-sofia"),
+  gameMode: text("game_mode").notNull().default("stroke"),
   status: text("status").notNull().default("setup"),
   first9Bet: real("first9_bet").notNull().default(5),
   second9Bet: real("second9_bet").notNull().default(5),
@@ -78,6 +108,20 @@ export const games = sqliteTable("games", {
   eaglePot: real("eagle_pot").notNull().default(30),
   longestDriveBet: real("longest_drive_bet").notNull().default(3),
   closestPinBet: real("closest_pin_bet").notNull().default(3),
+  // Action/Dots mode config
+  dotValue: real("dot_value").default(1),
+  dotBirdie: integer("dot_birdie").default(1),
+  dotEagle: integer("dot_eagle").default(2),
+  dotAlbatross: integer("dot_albatross").default(5),
+  dotDoubleBogey: integer("dot_double_bogey").default(-1),
+  dotSandy: integer("dot_sandy").default(1),
+  dotChipIn: integer("dot_chip_in").default(1),
+  dotGreenie: integer("dot_greenie").default(1),
+  dotLongestDrive: integer("dot_longest_drive").default(1),
+  dotClosestPin: integer("dot_closest_pin").default(1),
+  dotThreePutt: integer("dot_three_putt").default(-1),
+  dotWater: integer("dot_water").default(-1),
+  dotOb: integer("dot_ob").default(-1),
 });
 
 export const insertGameSchema = createInsertSchema(games).omit({ id: true });
@@ -112,6 +156,37 @@ export const insertScoreSchema = createInsertSchema(scores).omit({ id: true });
 export type InsertScore = z.infer<typeof insertScoreSchema>;
 export type Score = typeof scores.$inferSelect;
 
+// Achievements table (Action/Dots mode)
+export const achievements = sqliteTable("achievements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  gameId: integer("game_id").notNull(),
+  playerId: integer("player_id").notNull(),
+  hole: integer("hole").notNull(),
+  sandy: integer("sandy").notNull().default(0),
+  chipIn: integer("chip_in").notNull().default(0),
+  greenie: integer("greenie").notNull().default(0),
+  longestDriveWon: integer("longest_drive_won").notNull().default(0),
+  closestPinWon: integer("closest_pin_won").notNull().default(0),
+  threePutt: integer("three_putt").notNull().default(0),
+  water: integer("water").notNull().default(0),
+  ob: integer("ob").notNull().default(0),
+});
+
+export type Achievement = typeof achievements.$inferSelect;
+export type InsertAchievement = typeof achievements.$inferInsert;
+
+// Game photos table
+export const gamePhotos = sqliteTable("game_photos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  gameId: integer("game_id").notNull(),
+  mimeType: text("mime_type").notNull().default("image/jpeg"),
+  caption: text("caption"),
+  uploadedBy: text("uploaded_by"),
+  createdAt: text("created_at").notNull(),
+});
+
+export type GamePhoto = typeof gamePhotos.$inferSelect;
+
 // Roster table - remembered players
 export const roster = sqliteTable("roster", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -128,11 +203,12 @@ export type RosterPlayer = typeof roster.$inferSelect;
 export type PlayerWithScores = Player & { scores: Score[] };
 export type GameWithPlayers = Game & { players: PlayerWithScores[] };
 
-// Handicap stroke calculation
+// Handicap stroke calculation (supports HCP 0-54)
 export function getStrokesForHole(handicap: number, holeHcpIndex: number): number {
   if (handicap <= 0) return 0;
   let strokes = 0;
-  if (holeHcpIndex <= handicap) strokes = 1;
-  if (handicap > 18 && holeHcpIndex <= (handicap - 18)) strokes = 2;
+  if (holeHcpIndex <= handicap) strokes++;
+  if (handicap > 18 && holeHcpIndex <= (handicap - 18)) strokes++;
+  if (handicap > 36 && holeHcpIndex <= (handicap - 36)) strokes++;
   return strokes;
 }

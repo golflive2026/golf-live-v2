@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type CourseData, type Game, type Player, type Score } from "@shared/schema";
+import { type CourseData, type Game, type Player, type Score, type Achievement, DEFAULT_DOTS } from "@shared/schema";
 import {
   computeLeaderboard,
   computeMatchPlay,
   computeBirdieEagle,
   computeSpecialBets,
+  computeStablefordLeaderboard,
+  computeStablefordMatchPlay,
+  computeActionDots,
+  type DotConfig,
+  type ActionDotEntry,
 } from "@/lib/golf";
 import { Ruler, Target } from "lucide-react";
 
@@ -15,6 +20,7 @@ interface Props {
   players: Player[];
   scores: Score[];
   course: CourseData;
+  achievements?: Achievement[];
 }
 
 function MoneyDisplay({ amount, size = "sm" }: { amount: number; size?: "sm" | "lg" }) {
@@ -24,16 +30,158 @@ function MoneyDisplay({ amount, size = "sm" }: { amount: number; size?: "sm" | "
   return <span className={`${color} ${cls} tabular-nums`}>{prefix}{amount.toFixed(0)}</span>;
 }
 
-export default function Bets({ game, players, scores, course }: Props) {
+export default function Bets({ game, players, scores, course, achievements }: Props) {
   const [activeTab, setActiveTab] = useState("match");
-  const entries = computeLeaderboard(players, scores, course);
-  const matchPlay = computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
-  const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
-  const special = computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet, course);
 
   if (players.length === 0) {
     return <div className="text-center py-12 text-muted-foreground">No players yet</div>;
   }
+
+  // Action/Dots mode — completely different view
+  if (game.gameMode === "action") {
+    const dotConfig: DotConfig = {
+      dotBirdie: game.dotBirdie ?? DEFAULT_DOTS.dotBirdie,
+      dotEagle: game.dotEagle ?? DEFAULT_DOTS.dotEagle,
+      dotAlbatross: game.dotAlbatross ?? DEFAULT_DOTS.dotAlbatross,
+      dotDoubleBogey: game.dotDoubleBogey ?? DEFAULT_DOTS.dotDoubleBogey,
+      dotSandy: game.dotSandy ?? DEFAULT_DOTS.dotSandy,
+      dotChipIn: game.dotChipIn ?? DEFAULT_DOTS.dotChipIn,
+      dotGreenie: game.dotGreenie ?? DEFAULT_DOTS.dotGreenie,
+      dotLongestDrive: game.dotLongestDrive ?? DEFAULT_DOTS.dotLongestDrive,
+      dotClosestPin: game.dotClosestPin ?? DEFAULT_DOTS.dotClosestPin,
+      dotThreePutt: game.dotThreePutt ?? DEFAULT_DOTS.dotThreePutt,
+      dotWater: game.dotWater ?? DEFAULT_DOTS.dotWater,
+      dotOb: game.dotOb ?? DEFAULT_DOTS.dotOb,
+    };
+    const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course);
+    const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
+
+    return (
+      <div className="space-y-3">
+        <div className="text-xs text-muted-foreground mb-2">
+          Dot value: {dotValue} per dot per player · Pairwise settlement
+        </div>
+
+        {dotEntries.map((entry, idx) => (
+          <Card key={entry.playerId} className={`border-border ${idx === 0 && entry.totalDots > 0 ? "border-l-2 border-l-primary" : ""}`} data-testid={`card-dots-${entry.playerId}`}>
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-sm">{entry.playerName}</span>
+                <span className="text-lg font-extrabold tabular-nums">{entry.totalDots} dots</span>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1 text-center text-[10px] mb-3">
+                {entry.breakdown.birdies > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Birdies</div>
+                    <div className="font-bold">{entry.breakdown.birdies}</div>
+                  </div>
+                )}
+                {entry.breakdown.eagles > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Eagles</div>
+                    <div className="font-bold">{entry.breakdown.eagles}</div>
+                  </div>
+                )}
+                {entry.breakdown.albatrosses > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Albatross</div>
+                    <div className="font-bold">{entry.breakdown.albatrosses}</div>
+                  </div>
+                )}
+                {entry.breakdown.sandies > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Sandies</div>
+                    <div className="font-bold">{entry.breakdown.sandies}</div>
+                  </div>
+                )}
+                {entry.breakdown.chipIns > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Chip-ins</div>
+                    <div className="font-bold">{entry.breakdown.chipIns}</div>
+                  </div>
+                )}
+                {entry.breakdown.greenies > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Greenies</div>
+                    <div className="font-bold">{entry.breakdown.greenies}</div>
+                  </div>
+                )}
+                {entry.breakdown.longestDrives > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">LD</div>
+                    <div className="font-bold">{entry.breakdown.longestDrives}</div>
+                  </div>
+                )}
+                {entry.breakdown.closestPins > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">CP</div>
+                    <div className="font-bold">{entry.breakdown.closestPins}</div>
+                  </div>
+                )}
+                {entry.breakdown.doubleBogeys > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Dbl Bog</div>
+                    <div className="font-bold text-red-500">{entry.breakdown.doubleBogeys}</div>
+                  </div>
+                )}
+                {entry.breakdown.threePutts > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">3-Putt</div>
+                    <div className="font-bold text-red-500">{entry.breakdown.threePutts}</div>
+                  </div>
+                )}
+                {entry.breakdown.waters > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">Water</div>
+                    <div className="font-bold text-red-500">{entry.breakdown.waters}</div>
+                  </div>
+                )}
+                {entry.breakdown.obs > 0 && (
+                  <div className="bg-muted rounded px-1 py-0.5">
+                    <div className="text-muted-foreground">OB</div>
+                    <div className="font-bold text-red-500">{entry.breakdown.obs}</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-9 gap-0.5 text-center text-[9px]">
+                {entry.holeDots.slice(0, 9).map(h => (
+                  <div key={h.hole} className="text-muted-foreground font-medium">{h.hole}</div>
+                ))}
+                {entry.holeDots.slice(0, 9).map(h => (
+                  <div key={h.hole} className={`font-bold rounded py-0.5 ${h.total > 0 ? "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20" : h.total < 0 ? "text-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}>
+                    {h.total !== 0 ? (h.total > 0 ? "+" : "") + h.total : "-"}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-9 gap-0.5 text-center text-[9px] mt-1">
+                {entry.holeDots.slice(9, 18).map(h => (
+                  <div key={h.hole} className="text-muted-foreground font-medium">{h.hole}</div>
+                ))}
+                {entry.holeDots.slice(9, 18).map(h => (
+                  <div key={h.hole} className={`font-bold rounded py-0.5 ${h.total > 0 ? "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20" : h.total < 0 ? "text-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}>
+                    {h.total !== 0 ? (h.total > 0 ? "+" : "") + h.total : "-"}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  // Stroke or Stableford mode — tabbed view
+  const isStableford = game.gameMode === "stableford";
+  const entries = isStableford
+    ? computeStablefordLeaderboard(players, scores, course)
+    : computeLeaderboard(players, scores, course);
+  const matchPlay = isStableford
+    ? computeStablefordMatchPlay(entries as any, game.first9Bet, game.second9Bet, game.wholeGameBet)
+    : computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
+  const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
+  const special = computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet, course);
 
   const driveHolesLabel = course.longestDriveHoles.join(" & ");
   const pinHolesLabel = course.par3Holes.join(", ");
@@ -49,7 +197,10 @@ export default function Bets({ game, players, scores, course }: Props) {
 
       <TabsContent value="match" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
-          Winner-takes-all · Front 9 ({game.first9Bet}) · Back 9 ({game.second9Bet}) · Full ({game.wholeGameBet})
+          {isStableford
+            ? `Comparing Stableford points (highest wins) · Front 9 (${game.first9Bet}) · Back 9 (${game.second9Bet}) · Full (${game.wholeGameBet})`
+            : `Winner-takes-all · Front 9 (${game.first9Bet}) · Back 9 (${game.second9Bet}) · Full (${game.wholeGameBet})`
+          }
         </div>
         {matchPlay.sort((a, b) => b.total - a.total).map(r => (
           <Card key={r.playerId} className="border-border" data-testid={`card-match-${r.playerId}`}>

@@ -3,6 +3,8 @@ import {
   type Player, type InsertPlayer, players,
   type Score, type InsertScore, scores,
   type RosterPlayer, roster,
+  type Achievement, achievements,
+  type GamePhoto, gamePhotos,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
@@ -35,6 +37,8 @@ async function initDatabase(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS players (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id INTEGER NOT NULL, name TEXT NOT NULL, handicap INTEGER NOT NULL DEFAULT 0, roster_id INTEGER DEFAULT NULL)`,
     `CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id INTEGER NOT NULL, player_id INTEGER NOT NULL, hole INTEGER NOT NULL, gross_score INTEGER, longest_drive REAL, closest_pin REAL)`,
     `CREATE TABLE IF NOT EXISTS roster (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, handicap INTEGER NOT NULL DEFAULT 18, pin TEXT DEFAULT NULL, stats_public INTEGER NOT NULL DEFAULT 0)`,
+    `CREATE TABLE IF NOT EXISTS achievements (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id INTEGER NOT NULL, player_id INTEGER NOT NULL, hole INTEGER NOT NULL, sandy INTEGER NOT NULL DEFAULT 0, chip_in INTEGER NOT NULL DEFAULT 0, greenie INTEGER NOT NULL DEFAULT 0, longest_drive_won INTEGER NOT NULL DEFAULT 0, closest_pin_won INTEGER NOT NULL DEFAULT 0, three_putt INTEGER NOT NULL DEFAULT 0, water INTEGER NOT NULL DEFAULT 0, ob INTEGER NOT NULL DEFAULT 0)`,
+    `CREATE TABLE IF NOT EXISTS game_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id INTEGER NOT NULL, photo_data BLOB NOT NULL, mime_type TEXT NOT NULL DEFAULT 'image/jpeg', caption TEXT, uploaded_by TEXT, created_at TEXT NOT NULL)`,
   ];
   for (const sql of tables) {
     await client.execute(sql);
@@ -47,6 +51,21 @@ async function initDatabase(): Promise<void> {
     "ALTER TABLE roster ADD COLUMN pin TEXT DEFAULT NULL",
     "ALTER TABLE roster ADD COLUMN stats_public INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE roster ADD COLUMN active INTEGER NOT NULL DEFAULT 1",
+    // Game modes + Action/Dots config
+    "ALTER TABLE games ADD COLUMN game_mode TEXT NOT NULL DEFAULT 'stroke'",
+    "ALTER TABLE games ADD COLUMN dot_value REAL DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_birdie INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_eagle INTEGER DEFAULT 2",
+    "ALTER TABLE games ADD COLUMN dot_albatross INTEGER DEFAULT 5",
+    "ALTER TABLE games ADD COLUMN dot_double_bogey INTEGER DEFAULT -1",
+    "ALTER TABLE games ADD COLUMN dot_sandy INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_chip_in INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_greenie INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_longest_drive INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_closest_pin INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_three_putt INTEGER DEFAULT -1",
+    "ALTER TABLE games ADD COLUMN dot_water INTEGER DEFAULT -1",
+    "ALTER TABLE games ADD COLUMN dot_ob INTEGER DEFAULT -1",
   ];
   for (const m of migrations) {
     try { await client.execute(m); } catch {}
@@ -81,8 +100,10 @@ export class DatabaseStorage {
     return await db.select().from(games).orderBy(desc(games.id));
   }
   async deleteGame(id: number): Promise<void> {
+    await db.delete(achievements).where(eq(achievements.gameId, id));
     await db.delete(scores).where(eq(scores.gameId, id));
     await db.delete(players).where(eq(players.gameId, id));
+    await db.delete(gamePhotos).where(eq(gamePhotos.gameId, id));
     await db.delete(games).where(eq(games.id, id));
   }
   async createPlayer(player: InsertPlayer & { rosterId?: number | null }): Promise<Player> {
@@ -99,6 +120,7 @@ export class DatabaseStorage {
     return rows[0];
   }
   async deletePlayer(id: number): Promise<void> {
+    await db.delete(achievements).where(eq(achievements.playerId, id));
     await db.delete(scores).where(eq(scores.playerId, id));
     await db.delete(players).where(eq(players.id, id));
   }
@@ -158,19 +180,87 @@ export class DatabaseStorage {
     }
     return (await db.insert(roster).values({ name, handicap }).returning())[0];
   }
+
+  // === ACHIEVEMENTS (Action/Dots mode) ===
+  async upsertAchievement(gameId: number, playerId: number, hole: number, data: Partial<{
+    sandy: number; chipIn: number; greenie: number; longestDriveWon: number;
+    closestPinWon: number; threePutt: number; water: number; ob: number;
+  }>): Promise<Achievement> {
+    const existing = await db.select().from(achievements)
+      .where(and(eq(achievements.gameId, gameId), eq(achievements.playerId, playerId), eq(achievements.hole, hole)))
+      .get();
+    if (existing) {
+      const updateData: any = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== undefined) updateData[k] = v;
+      }
+      return (await db.update(achievements).set(updateData).where(eq(achievements.id, existing.id)).returning())[0];
+    }
+    return (await db.insert(achievements).values({
+      gameId, playerId, hole,
+      sandy: data.sandy ?? 0, chipIn: data.chipIn ?? 0, greenie: data.greenie ?? 0,
+      longestDriveWon: data.longestDriveWon ?? 0, closestPinWon: data.closestPinWon ?? 0,
+      threePutt: data.threePutt ?? 0, water: data.water ?? 0, ob: data.ob ?? 0,
+    }).returning())[0];
+  }
+  async getAchievementsByGame(gameId: number): Promise<Achievement[]> {
+    return await db.select().from(achievements).where(eq(achievements.gameId, gameId));
+  }
+
+  // === PHOTOS ===
+  async createPhoto(gameId: number, photoData: Buffer, mimeType: string, caption?: string, uploadedBy?: string): Promise<GamePhoto> {
+    // Use raw SQL for BLOB insert since Drizzle has issues with Turso BLOBs
+    const result = await client.execute({
+      sql: `INSERT INTO game_photos (game_id, photo_data, mime_type, caption, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, game_id, mime_type, caption, uploaded_by, created_at`,
+      args: [gameId, photoData, mimeType, caption ?? null, uploadedBy ?? null, new Date().toISOString()],
+    });
+    const row = result.rows[0] as any;
+    return { id: row.id, gameId: row.game_id, mimeType: row.mime_type, caption: row.caption, uploadedBy: row.uploaded_by, createdAt: row.created_at };
+  }
+  async getPhotosByGame(gameId: number): Promise<GamePhoto[]> {
+    // Return metadata only (no BLOB)
+    const result = await client.execute({
+      sql: `SELECT id, game_id, mime_type, caption, uploaded_by, created_at FROM game_photos WHERE game_id = ? ORDER BY id`,
+      args: [gameId],
+    });
+    return result.rows.map((r: any) => ({
+      id: r.id, gameId: r.game_id, mimeType: r.mime_type,
+      caption: r.caption, uploadedBy: r.uploaded_by, createdAt: r.created_at,
+    }));
+  }
+  async getPhotoData(photoId: number): Promise<{ data: Buffer; mimeType: string } | undefined> {
+    const result = await client.execute({
+      sql: `SELECT photo_data, mime_type FROM game_photos WHERE id = ?`,
+      args: [photoId],
+    });
+    if (result.rows.length === 0) return undefined;
+    const row = result.rows[0] as any;
+    return { data: Buffer.from(row.photo_data), mimeType: row.mime_type };
+  }
+  async getPhotoCountByGame(gameId: number): Promise<number> {
+    const result = await client.execute({
+      sql: `SELECT COUNT(*) as count FROM game_photos WHERE game_id = ?`,
+      args: [gameId],
+    });
+    return (result.rows[0] as any)?.count ?? 0;
+  }
+  async deletePhoto(photoId: number): Promise<void> {
+    await db.delete(gamePhotos).where(eq(gamePhotos.id, photoId));
+  }
 }
 
 export const storage = new DatabaseStorage();
 
 // === DATA EXPORT/IMPORT (for manual backup) ===
 export async function exportAllData() {
-  const [allGames, allPlayers, allScores, allRoster] = await Promise.all([
+  const [allGames, allPlayers, allScores, allRoster, allAchievements] = await Promise.all([
     db.select().from(games),
     db.select().from(players),
     db.select().from(scores),
     db.select().from(roster),
+    db.select().from(achievements),
   ]);
-  return { exportedAt: new Date().toISOString(), games: allGames, players: allPlayers, scores: allScores, roster: allRoster };
+  return { exportedAt: new Date().toISOString(), games: allGames, players: allPlayers, scores: allScores, roster: allRoster, achievements: allAchievements };
 }
 
 export async function importAllData(data: any) {

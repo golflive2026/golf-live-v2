@@ -8,14 +8,15 @@ import PaceTimer from "@/components/pace-timer";
 import Leaderboard from "@/components/leaderboard";
 import Bets from "@/components/bets";
 import Settlement from "@/components/settlement";
+import Photos from "@/components/photos";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import ManagePlayers from "@/components/manage-players";
-import { ClipboardCopy, Flag, Trophy, DollarSign, Receipt, Share2, Users, Clock, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ClipboardCopy, Flag, Trophy, DollarSign, Receipt, Share2, Users, Clock, ArrowLeft, CheckCircle2, Camera } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-type Tab = "quick" | "score" | "leaderboard" | "bets" | "settlement";
+type Tab = "quick" | "score" | "leaderboard" | "bets" | "settlement" | "photos";
 
 export default function GamePage() {
   const [matched, params] = useRoute("/game/:id");
@@ -57,7 +58,7 @@ export default function GamePage() {
     );
   }
 
-  const { game, players, scores } = data;
+  const { game, players, scores, achievements, photoCount } = data;
   const course = getCourse(game.courseId);
 
   const copyCode = async () => {
@@ -108,8 +109,9 @@ export default function GamePage() {
     { key: "quick", label: "Quick", icon: Users },
     { key: "score", label: "Detail", icon: Flag },
     { key: "leaderboard", label: "Board", icon: Trophy },
-    { key: "bets", label: "Bets", icon: DollarSign },
+    { key: "bets", label: game.gameMode === "action" ? "Dots" : "Bets", icon: DollarSign },
     { key: "settlement", label: "Settle", icon: Receipt },
+    { key: "photos", label: "Photos", icon: Camera },
   ];
 
   return (
@@ -182,13 +184,16 @@ export default function GamePage() {
           />
         )}
         {tab === "leaderboard" && (
-          <Leaderboard players={players} scores={scores} course={course} />
+          <Leaderboard players={players} scores={scores} course={course} game={game} achievements={achievements} />
         )}
         {tab === "bets" && (
-          <Bets game={game} players={players} scores={scores} course={course} />
+          <Bets game={game} players={players} scores={scores} course={course} achievements={achievements} />
         )}
         {tab === "settlement" && (
-          <Settlement game={game} players={players} scores={scores} course={course} />
+          <Settlement game={game} players={players} scores={scores} course={course} achievements={achievements} />
+        )}
+        {tab === "photos" && (
+          <Photos gameId={game.id} />
         )}
       </div>
 

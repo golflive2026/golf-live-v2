@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type CourseData, type Game, type Player, type Score, getStrokesForHole } from "@shared/schema";
+import { type CourseData, type Game, type Player, type Score, type Achievement, getStrokesForHole } from "@shared/schema";
 import { buildScoresMap, getScoreLabel, getScoreBgClass } from "@/lib/golf";
 import { playScoreSound } from "@/lib/sounds";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -14,9 +14,10 @@ interface Props {
   scores: Score[];
   course: CourseData;
   onHoleChange?: (hole: number) => void;
+  achievements?: Achievement[];
 }
 
-export default function QuickScore({ game, players, scores, course, onHoleChange }: Props) {
+export default function QuickScore({ game, players, scores, course, onHoleChange, achievements }: Props) {
   const [currentHole, setCurrentHoleInternal] = useState(() => {
     const scoresMap = buildScoresMap(scores);
     for (let h = 1; h <= 18; h++) {
@@ -179,6 +180,12 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
           </div>
         );
       })}
+
+      {game.gameMode === "action" && (
+        <p className="text-xs text-muted-foreground text-center mt-2">
+          Use Detail tab for achievement tracking
+        </p>
+      )}
 
       <div className="flex gap-3 pt-2">
         <Button

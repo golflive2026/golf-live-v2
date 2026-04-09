@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { Game, Player, Score } from "@shared/schema";
+import type { Game, Player, Score, Achievement } from "@shared/schema";
 
 export interface GameData {
   game: Game;
   players: Player[];
   scores: Score[];
+  achievements: Achievement[];
+  photoCount: number;
 }
 
 export function useGameData(gameId: number) {

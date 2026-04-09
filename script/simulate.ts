@@ -34,8 +34,9 @@ interface Score { id: number; gameId: number; playerId: number; hole: number; gr
 function getStrokesForHole(handicap: number, holeHcpIndex: number): number {
   if (handicap <= 0) return 0;
   let strokes = 0;
-  if (holeHcpIndex <= handicap) strokes = 1;
-  if (handicap > 18 && holeHcpIndex <= (handicap - 18)) strokes = 2;
+  if (holeHcpIndex <= handicap) strokes++;
+  if (handicap > 18 && holeHcpIndex <= (handicap - 18)) strokes++;
+  if (handicap > 36 && holeHcpIndex <= (handicap - 36)) strokes++;
   return strokes;
 }
 
@@ -434,7 +435,185 @@ for (let i = 0; i < 100; i++) {
 }
 console.log(`  100 random games (2-50 players) - OK`);
 
+// ============================================================
+// NEW: STABLEFORD & ACTION MODE TESTS
+// ============================================================
+
+// Import the new shared functions
+import {
+  computeLeaderboard as computeLeaderboardShared,
+  computeSettlement as computeSettlementShared,
+  computeStablefordLeaderboard,
+  computeStablefordSettlement,
+  computeActionDots,
+  computeActionSettlement,
+  type DotConfig,
+} from "../shared/golf";
+import { getStablefordPoints, type Player as SharedPlayer, type Score as SharedScore, type Achievement as SharedAchievement } from "../shared/schema";
+import { COURSES as SCHEMA_COURSES, getCourse } from "../shared/schema";
+
+const DOT_CONFIG: DotConfig = {
+  dotBirdie: 1, dotEagle: 2, dotAlbatross: 5, dotDoubleBogey: -1,
+  dotSandy: 1, dotChipIn: 1, dotGreenie: 1,
+  dotLongestDrive: 1, dotClosestPin: 1,
+  dotThreePutt: -1, dotWater: -1, dotOb: -1,
+};
+
+function toSharedPlayer(p: Player): SharedPlayer {
+  return { id: p.id, gameId: p.gameId, name: p.name, handicap: p.handicap, rosterId: null };
+}
+
+function toSharedScore(s: Score): SharedScore {
+  return { id: s.id, gameId: s.gameId, playerId: s.playerId, hole: s.hole, grossScore: s.grossScore, longestDrive: s.longestDrive, closestPin: s.closestPin };
+}
+
+function randomAchievements(players: SharedPlayer[], scores: SharedScore[], courseData: any): SharedAchievement[] {
+  const achs: SharedAchievement[] = [];
+  let achId = 100000;
+  for (const p of players) {
+    for (let hole = 1; hole <= 18; hole++) {
+      const score = scores.find(s => s.playerId === p.id && s.hole === hole);
+      if (!score?.grossScore) continue;
+      const par = courseData.holePars[hole - 1];
+      achs.push({
+        id: achId++, gameId: p.gameId, playerId: p.id, hole,
+        sandy: Math.random() < 0.08 ? 1 : 0,
+        chipIn: Math.random() < 0.03 ? 1 : 0,
+        greenie: courseData.par3Holes.includes(hole) && score.grossScore <= par ? (Math.random() < 0.3 ? 1 : 0) : 0,
+        longestDriveWon: courseData.longestDriveHoles.includes(hole) ? (Math.random() < 0.1 ? 1 : 0) : 0,
+        closestPinWon: courseData.par3Holes.includes(hole) ? (Math.random() < 0.15 ? 1 : 0) : 0,
+        threePutt: Math.random() < 0.12 ? 1 : 0,
+        water: Math.random() < 0.06 ? 1 : 0,
+        ob: Math.random() < 0.04 ? 1 : 0,
+      });
+    }
+  }
+  return achs;
+}
+
+// Test 9: Stableford mode across all courses
+console.log("\n--- Test 9: Stableford mode (all 6 courses, 2-50 players) ---");
+const courseIds = Object.keys(SCHEMA_COURSES);
+for (const cid of courseIds) {
+  const courseData = getCourse(cid);
+  for (const n of [2, 10, 20, 50]) {
+    const players = generatePlayers(n, nextId).map(toSharedPlayer);
+    const scores = generateScores(players as any[], courseData as any, nextId, true).map(toSharedScore);
+
+    const entries = computeStablefordLeaderboard(players, scores, courseData);
+
+    // Verify Stableford points range
+    for (const e of entries) {
+      if (e.holesPlayed > 0) {
+        assert(e.stablefordTotal >= 0 && e.stablefordTotal <= 90,
+          `Stableford ${cid} ${n}p: ${e.player.name} total ${e.stablefordTotal} out of range`);
+        assert(e.front9Stableford + e.back9Stableford === e.stablefordTotal,
+          `Stableford ${cid} ${n}p: F9+B9 !== Total for ${e.player.name}`);
+      }
+    }
+
+    // Verify sorting descending
+    for (let i = 1; i < entries.length; i++) {
+      if (entries[i-1].holesPlayed > 0 && entries[i].holesPlayed > 0) {
+        assert(entries[i-1].stablefordTotal >= entries[i].stablefordTotal,
+          `Stableford ${cid} ${n}p: not sorted descending`);
+      }
+    }
+
+    // Verify settlement zero-sum
+    const settlement = computeStablefordSettlement(entries, scores, players, BETS, courseData);
+    const stSum = settlement.reduce((s, e) => s + e.grandTotal, 0);
+    assert(nearZero(stSum), `Stableford ${cid} ${n}p: settlement sum = ${stSum}`);
+  }
+  console.log(`  ${courseData.name}: Stableford OK (2/10/20/50 players)`);
+}
+
+// Test 10: Stableford edge cases
+console.log("\n--- Test 10: Stableford edge cases ---");
+{
+  const courseData = getCourse("st-sofia");
+  // Scratch player (HCP 0) shooting all pars: net = par, all 2 pts = 36
+  assert(getStablefordPoints(4, 4) === 2, "Net par = 2 pts");
+  assert(getStablefordPoints(3, 4) === 3, "Net birdie = 3 pts");
+  assert(getStablefordPoints(2, 4) === 4, "Net eagle = 4 pts");
+  assert(getStablefordPoints(1, 4) === 5, "Net albatross = 5 pts");
+  assert(getStablefordPoints(5, 4) === 1, "Net bogey = 1 pt");
+  assert(getStablefordPoints(6, 4) === 0, "Net double bogey = 0 pts");
+  assert(getStablefordPoints(7, 4) === 0, "Net triple bogey = 0 pts");
+
+  // HCP 54 shooting all pars: gets 3 strokes per hole, net = par-3 = 5 pts each = 90
+  const p54: SharedPlayer[] = [
+    { id: 9001, gameId: 1, name: "HCP54", handicap: 54, rosterId: null },
+    { id: 9002, gameId: 1, name: "Scratch", handicap: 0, rosterId: null },
+  ];
+  const s54: SharedScore[] = [];
+  for (const p of p54) {
+    for (let h = 1; h <= 18; h++) {
+      s54.push({ id: 90000 + p.id * 100 + h, gameId: 1, playerId: p.id, hole: h, grossScore: courseData.holePars[h-1], longestDrive: null, closestPin: null });
+    }
+  }
+  const e54 = computeStablefordLeaderboard(p54, s54, courseData);
+  const hcp54 = e54.find(e => e.player.name === "HCP54")!;
+  const scratch = e54.find(e => e.player.name === "Scratch")!;
+  assert(scratch.stablefordTotal === 36, `Scratch all-par should be 36 pts, got ${scratch.stablefordTotal}`);
+  assert(hcp54.stablefordTotal === 90, `HCP54 all-par should be 90 pts, got ${hcp54.stablefordTotal}`);
+  console.log("  Stableford edge cases - OK");
+}
+
+// Test 11: Action/Dots mode across all courses
+console.log("\n--- Test 11: Action/Dots mode (all 6 courses, 2-50 players) ---");
+for (const cid of courseIds) {
+  const courseData = getCourse(cid);
+  for (const n of [2, 10, 20, 50]) {
+    const players = generatePlayers(n, nextId).map(toSharedPlayer);
+    const scores = generateScores(players as any[], courseData as any, nextId, true).map(toSharedScore);
+    const achs = randomAchievements(players, scores, courseData);
+
+    const dotEntries = computeActionDots(players, scores, achs, DOT_CONFIG, courseData);
+
+    // Verify sorting descending
+    for (let i = 1; i < dotEntries.length; i++) {
+      assert(dotEntries[i-1].totalDots >= dotEntries[i].totalDots,
+        `Action ${cid} ${n}p: not sorted descending`);
+    }
+
+    // Verify hole dots sum = totalDots
+    for (const e of dotEntries) {
+      const holeSum = e.holeDots.reduce((s, h) => s + h.total, 0);
+      assert(holeSum === e.totalDots,
+        `Action ${cid} ${n}p: holeDots sum (${holeSum}) !== totalDots (${e.totalDots}) for ${e.playerName}`);
+    }
+
+    // Verify settlement zero-sum
+    const settlement = computeActionSettlement(dotEntries, 1);
+    const actSum = settlement.reduce((s, e) => s + e.grandTotal, 0);
+    assert(nearZero(actSum), `Action ${cid} ${n}p: settlement sum = ${actSum}`);
+  }
+  console.log(`  ${courseData.name}: Action OK (2/10/20/50 players)`);
+}
+
+// Test 12: Action empty achievements
+console.log("\n--- Test 12: Action with no achievements ---");
+{
+  const courseData = getCourse("pravetz");
+  const players: SharedPlayer[] = [
+    { id: 8001, gameId: 1, name: "A", handicap: 18, rosterId: null },
+    { id: 8002, gameId: 1, name: "B", handicap: 12, rosterId: null },
+  ];
+  const scores = generateScores(players as any[], courseData as any, nextId, false).map(toSharedScore);
+  const dotEntries = computeActionDots(players, scores, [], DOT_CONFIG, courseData);
+  // Should still work — only auto-detected dots (birdie/eagle/double bogey from scores)
+  for (const e of dotEntries) {
+    assert(e.breakdown.sandies === 0, "No achievements: sandies should be 0");
+    assert(e.breakdown.chipIns === 0, "No achievements: chipIns should be 0");
+  }
+  const settlement = computeActionSettlement(dotEntries, 2);
+  const actSum = settlement.reduce((s, e) => s + e.grandTotal, 0);
+  assert(nearZero(actSum), `Action no-ach: settlement sum = ${actSum}`);
+  console.log("  Action with no achievements - OK");
+}
+
 // Summary
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) process.exit(1);
-console.log("All settlement math verified: every sum is zero.");
+console.log("All settlement math verified: every sum is zero.\nAll 3 game modes verified across all 6 courses with 2-50 players.");

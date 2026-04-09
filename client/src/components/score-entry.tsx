@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { type CourseData, type Game, type Player, type Score } from "@shared/schema";
-import { getScoreLabel, getStrokesForHole, buildScoresMap } from "@/lib/golf";
+import { type CourseData, type Game, type Player, type Score, type Achievement, getStablefordPoints } from "@shared/schema";
+import { getScoreLabel, getStrokesForHole, getNetScoreForHole, buildScoresMap } from "@/lib/golf";
 import { playScoreSound } from "@/lib/sounds";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ChevronLeft, ChevronRight, Minus, Plus, Ruler, Target } from "lucide-react";
@@ -16,9 +16,10 @@ interface Props {
   selectedPlayerId: number | null;
   onSelectPlayer: (id: number) => void;
   course: CourseData;
+  achievements?: Achievement[];
 }
 
-export default function ScoreEntry({ game, players, scores, selectedPlayerId, onSelectPlayer, course }: Props) {
+export default function ScoreEntry({ game, players, scores, selectedPlayerId, onSelectPlayer, course, achievements }: Props) {
   const [currentHole, setCurrentHole] = useState(1);
   const [saving, setSaving] = useState(false);
 
@@ -158,6 +159,19 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                     {getScoreLabel(grossScore, par)}
                   </div>
                 )}
+                {game.gameMode === "stableford" && grossScore && (
+                  <div className="text-xs font-bold mt-1">
+                    {(() => {
+                      const net = getNetScoreForHole(grossScore, player?.handicap ?? 0, currentHole - 1, course);
+                      const pts = net !== null ? getStablefordPoints(net, par) : null;
+                      return pts !== null ? (
+                        <span className={pts >= 3 ? "text-green-600" : pts === 2 ? "text-muted-foreground" : pts === 1 ? "text-orange-500" : "text-red-500"}>
+                          {pts} pts
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
               </div>
 
               <Button
@@ -234,6 +248,70 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
           )}
         </CardContent>
       </Card>
+
+      {game.gameMode === "action" && player && (
+        <Card className="border-border">
+          <CardContent className="p-4 space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Achievements</p>
+
+            {/* Auto-detected badges */}
+            {grossScore && (
+              <div className="flex flex-wrap gap-1.5">
+                {(() => {
+                  const net = getNetScoreForHole(grossScore, player.handicap, currentHole - 1, course);
+                  if (net === null) return null;
+                  const diff = net - par;
+                  return (
+                    <>
+                      {diff <= -3 && <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-bold">Albatross!</span>}
+                      {diff === -2 && <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-bold">Eagle</span>}
+                      {diff === -1 && <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">Birdie</span>}
+                      {diff >= 2 && <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-bold">Double+</span>}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Manual achievement toggles */}
+            <div className="grid grid-cols-2 gap-2">
+              {(() => {
+                const currentAch = achievements?.find(a => a.playerId === player.id && a.hole === currentHole);
+                const saveAchievement = async (data: Record<string, number>) => {
+                  if (!player) return;
+                  await apiRequest("POST", "/api/achievements", {
+                    gameId: game.id, playerId: player.id, hole: currentHole, ...data,
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                };
+                const toggles = [
+                  { key: "sandy", label: "Sandy", icon: "⛱️", always: true },
+                  { key: "chipIn", label: "Chip-in", icon: "🎯", always: true },
+                  { key: "threePutt", label: "3-putt", icon: "😬", always: true },
+                  { key: "water", label: "Water", icon: "💧", always: true },
+                  { key: "ob", label: "OB", icon: "🚫", always: true },
+                  { key: "greenie", label: "Greenie", icon: "🟢", always: false, show: course.par3Holes.includes(currentHole) },
+                  { key: "longestDriveWon", label: "LD Won", icon: "💪", always: false, show: course.longestDriveHoles.includes(currentHole) },
+                  { key: "closestPinWon", label: "CTP Won", icon: "📍", always: false, show: course.par3Holes.includes(currentHole) },
+                ];
+                return toggles
+                  .filter(t => t.always || t.show)
+                  .map(t => (
+                    <button
+                      key={t.key}
+                      onClick={() => saveAchievement({ [t.key]: (currentAch as any)?.[t.key] ? 0 : 1 })}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                        (currentAch as any)?.[t.key] ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {t.icon} {t.label}
+                    </button>
+                  ));
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex gap-3">
         <Button

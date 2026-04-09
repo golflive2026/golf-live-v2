@@ -1,4 +1,4 @@
-import { type CourseData, type Score, type Player, getStrokesForHole as getStrokes } from "./schema";
+import { type CourseData, type Score, type Player, type Achievement, type Game, getStrokesForHole as getStrokes, getStablefordPoints } from "./schema";
 
 export function getStrokesForHole(handicap: number, holeIndex: number, course: CourseData): number {
   return getStrokes(handicap, course.holeHcp[holeIndex]);
@@ -141,6 +141,226 @@ export function computeSettlement(
     const sp = special.playerTotals.get(p.id) || 0;
     return { playerId: p.id, playerName: p.name, matchPlay: mp?.total || 0, birdies: be?.birdieWinnings || 0, eagles: be?.eagleWinnings || 0, specialBets: sp, grandTotal: (mp?.total || 0) + (be?.total || 0) + sp };
   });
+  settlement.sort((a, b) => b.grandTotal - a.grandTotal);
+  return settlement;
+}
+
+// ============================================================
+// STABLEFORD MODE
+// ============================================================
+
+export interface StablefordEntry extends LeaderboardEntry {
+  stablefordTotal: number;
+  front9Stableford: number;
+  back9Stableford: number;
+  holeStablefordPoints: (number | null)[];
+}
+
+export function computeStablefordLeaderboard(players: Player[], allScores: Score[], course: CourseData): StablefordEntry[] {
+  const scoresMap = buildScoresMap(allScores);
+  const entries: StablefordEntry[] = players.map(player => {
+    const playerScores = scoresMap.get(player.id) || new Map<number, Score>();
+    let grossTotal = 0, netTotal = 0, front9Net = 0, back9Net = 0, front9Gross = 0, back9Gross = 0;
+    let holesPlayed = 0, birdies = 0, eagles = 0;
+    let stablefordTotal = 0, front9Stableford = 0, back9Stableford = 0;
+    const holeScores: (number | null)[] = [], holeNetScores: (number | null)[] = [], holeStablefordPoints: (number | null)[] = [];
+    for (let i = 0; i < 18; i++) {
+      const score = playerScores.get(i + 1);
+      const gross = score?.grossScore ?? null;
+      holeScores.push(gross);
+      if (gross !== null) {
+        holesPlayed++; grossTotal += gross;
+        const net = getNetScoreForHole(gross, player.handicap, i, course)!;
+        netTotal += net; holeNetScores.push(net);
+        const pts = getStablefordPoints(net, course.holePars[i]);
+        holeStablefordPoints.push(pts);
+        stablefordTotal += pts;
+        if (i < 9) { front9Net += net; front9Gross += gross; front9Stableford += pts; }
+        else { back9Net += net; back9Gross += gross; back9Stableford += pts; }
+        const par = course.holePars[i];
+        if (gross <= par - 2) eagles++; else if (gross === par - 1) birdies++;
+      } else { holeNetScores.push(null); holeStablefordPoints.push(null); }
+    }
+    let parPlayed = 0;
+    for (let i = 0; i < 18; i++) { if (holeScores[i] !== null) parPlayed += course.holePars[i]; }
+    const gd = grossTotal - parPlayed, nd = netTotal - parPlayed;
+    const fmtVp = (d: number) => d === 0 ? "E" : (d > 0 ? "+" + d : "" + d);
+    const vsParDisplay = holesPlayed === 0 ? "-" : fmtVp(gd);
+    const netVsParDisplay = holesPlayed === 0 ? "-" : fmtVp(nd);
+    return { player, grossTotal, netTotal, front9Net, back9Net, front9Gross, back9Gross, holesPlayed, birdies, eagles, vsParDisplay, netVsParDisplay, holeScores, holeNetScores, stablefordTotal, front9Stableford, back9Stableford, holeStablefordPoints };
+  });
+  // Stableford: highest points wins (descending)
+  entries.sort((a, b) => {
+    if (a.holesPlayed === 0 && b.holesPlayed === 0) return 0;
+    if (a.holesPlayed === 0) return 1; if (b.holesPlayed === 0) return -1;
+    if (a.stablefordTotal !== b.stablefordTotal) return b.stablefordTotal - a.stablefordTotal;
+    return a.grossTotal - b.grossTotal;
+  });
+  return entries;
+}
+
+export function computeStablefordMatchPlay(entries: StablefordEntry[], front9Bet: number, back9Bet: number, wholeGameBet: number): MatchPlayResult[] {
+  const results: MatchPlayResult[] = entries.map(e => ({ playerId: e.player.id, playerName: e.player.name, front9: 0, back9: 0, wholeGame: 0, total: 0 }));
+  if (entries.length < 2) return results;
+  const idxMap = new Map<number, number>();
+  entries.forEach((e, i) => idxMap.set(e.player.id, i));
+  function settle(getPts: (e: StablefordEntry) => number, isComplete: (e: StablefordEntry) => boolean, bet: number, field: "front9" | "back9" | "wholeGame") {
+    if (!entries.every(isComplete)) return;
+    const bestPts = Math.max(...entries.map(getPts)); // highest wins in Stableford
+    const winners = entries.filter(e => getPts(e) === bestPts);
+    const losers = entries.filter(e => getPts(e) !== bestPts);
+    if (losers.length === 0) return;
+    const perWinner = (bet * losers.length) / winners.length;
+    for (const w of winners) results[idxMap.get(w.player.id)!][field] = perWinner;
+    for (const l of losers) results[idxMap.get(l.player.id)!][field] = -bet;
+  }
+  settle(e => e.front9Stableford, e => e.holeScores.slice(0, 9).filter(s => s !== null).length === 9, front9Bet, "front9");
+  settle(e => e.back9Stableford, e => e.holeScores.slice(9, 18).filter(s => s !== null).length === 9, back9Bet, "back9");
+  settle(e => e.stablefordTotal, e => e.holesPlayed === 18, wholeGameBet, "wholeGame");
+  results.forEach(r => r.total = r.front9 + r.back9 + r.wholeGame);
+  return results;
+}
+
+export function computeStablefordSettlement(
+  entries: StablefordEntry[], allScores: Score[], players: Player[],
+  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number },
+  course: CourseData,
+): SettlementEntry[] {
+  const matchPlay = computeStablefordMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
+  const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
+  const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course);
+  const settlement: SettlementEntry[] = players.map(p => {
+    const mp = matchPlay.find(r => r.playerId === p.id);
+    const be = birdieEagle.find(r => r.playerId === p.id);
+    const sp = special.playerTotals.get(p.id) || 0;
+    return { playerId: p.id, playerName: p.name, matchPlay: mp?.total || 0, birdies: be?.birdieWinnings || 0, eagles: be?.eagleWinnings || 0, specialBets: sp, grandTotal: (mp?.total || 0) + (be?.total || 0) + sp };
+  });
+  settlement.sort((a, b) => b.grandTotal - a.grandTotal);
+  return settlement;
+}
+
+// ============================================================
+// ACTION/DOTS MODE
+// ============================================================
+
+export interface DotConfig {
+  dotBirdie: number; dotEagle: number; dotAlbatross: number; dotDoubleBogey: number;
+  dotSandy: number; dotChipIn: number; dotGreenie: number;
+  dotLongestDrive: number; dotClosestPin: number;
+  dotThreePutt: number; dotWater: number; dotOb: number;
+}
+
+export interface ActionDotEntry {
+  playerId: number;
+  playerName: string;
+  totalDots: number;
+  holeDots: { hole: number; auto: number; manual: number; total: number }[];
+  breakdown: {
+    birdies: number; eagles: number; albatrosses: number; doubleBogeys: number;
+    sandies: number; chipIns: number; greenies: number;
+    longestDrives: number; closestPins: number;
+    threePutts: number; waters: number; obs: number;
+  };
+}
+
+export function buildAchievementsMap(allAchievements: Achievement[]): Map<number, Map<number, Achievement>> {
+  const map = new Map<number, Map<number, Achievement>>();
+  for (const a of allAchievements) {
+    if (!map.has(a.playerId)) map.set(a.playerId, new Map());
+    map.get(a.playerId)!.set(a.hole, a);
+  }
+  return map;
+}
+
+export function computeActionDots(
+  players: Player[], allScores: Score[], allAchievements: Achievement[],
+  dotConfig: DotConfig, course: CourseData,
+): ActionDotEntry[] {
+  const scoresMap = buildScoresMap(allScores);
+  const achievementsMap = buildAchievementsMap(allAchievements);
+
+  const entries: ActionDotEntry[] = players.map(player => {
+    const playerScores = scoresMap.get(player.id) || new Map<number, Score>();
+    const playerAch = achievementsMap.get(player.id) || new Map<number, Achievement>();
+    let totalDots = 0;
+    const holeDots: ActionDotEntry["holeDots"] = [];
+    const breakdown = { birdies: 0, eagles: 0, albatrosses: 0, doubleBogeys: 0, sandies: 0, chipIns: 0, greenies: 0, longestDrives: 0, closestPins: 0, threePutts: 0, waters: 0, obs: 0 };
+
+    for (let i = 0; i < 18; i++) {
+      const hole = i + 1;
+      const score = playerScores.get(hole);
+      const ach = playerAch.get(hole);
+      const gross = score?.grossScore ?? null;
+      let autoDots = 0, manualDots = 0;
+
+      if (gross !== null) {
+        // Auto-detect from NET score
+        const net = getNetScoreForHole(gross, player.handicap, i, course)!;
+        const par = course.holePars[i];
+        const netDiff = net - par;
+        if (netDiff <= -3) { breakdown.albatrosses++; autoDots += dotConfig.dotAlbatross; }
+        else if (netDiff === -2) { breakdown.eagles++; autoDots += dotConfig.dotEagle; }
+        else if (netDiff === -1) { breakdown.birdies++; autoDots += dotConfig.dotBirdie; }
+        else if (netDiff >= 2) { breakdown.doubleBogeys++; autoDots += dotConfig.dotDoubleBogey; }
+      }
+
+      // Manual achievements
+      if (ach) {
+        if (ach.sandy) { breakdown.sandies++; manualDots += dotConfig.dotSandy; }
+        if (ach.chipIn) { breakdown.chipIns++; manualDots += dotConfig.dotChipIn; }
+        if (ach.greenie) {
+          // Greenie only counts if NET score <= par on that hole
+          if (gross !== null) {
+            const net = getNetScoreForHole(gross, player.handicap, i, course)!;
+            if (net <= course.holePars[i]) {
+              breakdown.greenies++; manualDots += dotConfig.dotGreenie;
+            }
+          }
+        }
+        if (ach.longestDriveWon) { breakdown.longestDrives++; manualDots += dotConfig.dotLongestDrive; }
+        if (ach.closestPinWon) { breakdown.closestPins++; manualDots += dotConfig.dotClosestPin; }
+        if (ach.threePutt) { breakdown.threePutts++; manualDots += dotConfig.dotThreePutt; }
+        if (ach.water) { breakdown.waters++; manualDots += dotConfig.dotWater; }
+        if (ach.ob) { breakdown.obs++; manualDots += dotConfig.dotOb; }
+      }
+
+      const holeTotal = autoDots + manualDots;
+      totalDots += holeTotal;
+      holeDots.push({ hole, auto: autoDots, manual: manualDots, total: holeTotal });
+    }
+
+    return { playerId: player.id, playerName: player.name, totalDots, holeDots, breakdown };
+  });
+
+  entries.sort((a, b) => b.totalDots - a.totalDots);
+  return entries;
+}
+
+export function computeActionSettlement(
+  dotEntries: ActionDotEntry[], dotValue: number,
+): SettlementEntry[] {
+  // Pairwise: each pair settles dot difference × dotValue
+  const totals = new Map<number, number>();
+  dotEntries.forEach(e => totals.set(e.playerId, 0));
+
+  for (let i = 0; i < dotEntries.length; i++) {
+    for (let j = i + 1; j < dotEntries.length; j++) {
+      const diff = dotEntries[i].totalDots - dotEntries[j].totalDots;
+      const amount = diff * dotValue;
+      totals.set(dotEntries[i].playerId, (totals.get(dotEntries[i].playerId) || 0) + amount);
+      totals.set(dotEntries[j].playerId, (totals.get(dotEntries[j].playerId) || 0) - amount);
+    }
+  }
+
+  const settlement: SettlementEntry[] = dotEntries.map(e => ({
+    playerId: e.playerId,
+    playerName: e.playerName,
+    matchPlay: totals.get(e.playerId) || 0,
+    birdies: 0,
+    eagles: 0,
+    specialBets: 0,
+    grandTotal: totals.get(e.playerId) || 0,
+  }));
   settlement.sort((a, b) => b.grandTotal - a.grandTotal);
   return settlement;
 }

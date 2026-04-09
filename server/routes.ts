@@ -26,17 +26,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/games", async (req, res) => {
     try {
-      const { name, date, courseId, first9Bet, second9Bet, wholeGameBet, birdiePot, eaglePot, longestDriveBet, closestPinBet } = req.body;
+      const { name, date, courseId, gameMode,
+        first9Bet, second9Bet, wholeGameBet, birdiePot, eaglePot, longestDriveBet, closestPinBet,
+        dotValue, dotBirdie, dotEagle, dotAlbatross, dotDoubleBogey,
+        dotSandy, dotChipIn, dotGreenie, dotLongestDrive, dotClosestPin,
+        dotThreePutt, dotWater, dotOb,
+      } = req.body;
       if (!name || !date) return res.status(400).json({ error: "Name and date are required" });
       let code = generateCode();
       while (await storage.getGameByCode(code)) { code = generateCode(); }
       const game = await storage.createGame({
         name, date, code,
         courseId: courseId || "st-sofia",
+        gameMode: gameMode || "stroke",
         status: "setup",
         first9Bet: first9Bet ?? 5, second9Bet: second9Bet ?? 5, wholeGameBet: wholeGameBet ?? 15,
         birdiePot: birdiePot ?? 3, eaglePot: eaglePot ?? 30,
         longestDriveBet: longestDriveBet ?? 3, closestPinBet: closestPinBet ?? 3,
+        dotValue: dotValue ?? 1,
+        dotBirdie: dotBirdie ?? 1, dotEagle: dotEagle ?? 2, dotAlbatross: dotAlbatross ?? 5,
+        dotDoubleBogey: dotDoubleBogey ?? -1,
+        dotSandy: dotSandy ?? 1, dotChipIn: dotChipIn ?? 1, dotGreenie: dotGreenie ?? 1,
+        dotLongestDrive: dotLongestDrive ?? 1, dotClosestPin: dotClosestPin ?? 1,
+        dotThreePutt: dotThreePutt ?? -1, dotWater: dotWater ?? -1, dotOb: dotOb ?? -1,
       });
       res.json(game);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -154,11 +166,76 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/games/:id/full", async (req, res) => {
     const game = await storage.getGame(Number(req.params.id));
     if (!game) return res.status(404).json({ error: "Game not found" });
-    const [gamePlayers, gameScores] = await Promise.all([
+    const [gamePlayers, gameScores, gameAchievements, photoCount] = await Promise.all([
       storage.getPlayersByGame(game.id),
       storage.getScoresByGame(game.id),
+      storage.getAchievementsByGame(game.id),
+      storage.getPhotoCountByGame(game.id),
     ]);
-    res.json({ game, players: gamePlayers, scores: gameScores });
+    res.json({ game, players: gamePlayers, scores: gameScores, achievements: gameAchievements, photoCount });
+  });
+
+  // === ACHIEVEMENTS (Action/Dots mode) ===
+  app.post("/api/achievements", async (req, res) => {
+    try {
+      const { gameId, playerId, hole, sandy, chipIn, greenie, longestDriveWon, closestPinWon, threePutt, water, ob } = req.body;
+      if (!gameId || !playerId || !hole) return res.status(400).json({ error: "gameId, playerId, and hole are required" });
+      const game = await storage.getGame(gameId);
+      if (game?.status === "finished") return res.status(403).json({ error: "Game is finished — scores are locked" });
+      const achievement = await storage.upsertAchievement(gameId, playerId, hole, {
+        sandy: sandy !== undefined ? sandy : undefined,
+        chipIn: chipIn !== undefined ? chipIn : undefined,
+        greenie: greenie !== undefined ? greenie : undefined,
+        longestDriveWon: longestDriveWon !== undefined ? longestDriveWon : undefined,
+        closestPinWon: closestPinWon !== undefined ? closestPinWon : undefined,
+        threePutt: threePutt !== undefined ? threePutt : undefined,
+        water: water !== undefined ? water : undefined,
+        ob: ob !== undefined ? ob : undefined,
+      });
+      res.json(achievement);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // === PHOTOS ===
+  app.get("/api/games/:id/photos", async (req, res) => {
+    try {
+      const photos = await storage.getPhotosByGame(Number(req.params.id));
+      res.json(photos);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/games/:id/photos", async (req, res) => {
+    try {
+      const gameId = Number(req.params.id);
+      const game = await storage.getGame(gameId);
+      if (!game) return res.status(404).json({ error: "Game not found" });
+      const count = await storage.getPhotoCountByGame(gameId);
+      if (count >= 3) return res.status(400).json({ error: "Maximum 3 photos per game" });
+      // Expect base64-encoded photo in JSON body
+      const { data, mimeType, caption, uploadedBy } = req.body;
+      if (!data) return res.status(400).json({ error: "No photo data provided" });
+      const buffer = Buffer.from(data, "base64");
+      if (buffer.length > 2 * 1024 * 1024) return res.status(400).json({ error: "Photo too large (max 2MB)" });
+      const photo = await storage.createPhoto(gameId, buffer, mimeType || "image/jpeg", caption, uploadedBy);
+      res.json(photo);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get("/api/photos/:photoId/image", async (req, res) => {
+    try {
+      const result = await storage.getPhotoData(Number(req.params.photoId));
+      if (!result) return res.status(404).json({ error: "Photo not found" });
+      res.set("Content-Type", result.mimeType);
+      res.set("Cache-Control", "public, max-age=86400, immutable");
+      res.send(result.data);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete("/api/photos/:photoId", async (req, res) => {
+    try {
+      await storage.deletePhoto(Number(req.params.photoId));
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // Roster endpoints
