@@ -85,8 +85,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/games/:id/start", async (req, res) => {
     const game = await storage.updateGame(Number(req.params.id), { status: "active" });
     if (!game) return res.status(404).json({ error: "Game not found" });
-    // Fire-and-forget email notifications
-    sendGameStartNotifications(game).catch(e => console.error("[EMAIL] Notification error:", e));
+    // Fire-and-forget email notifications — notifyMode: "all" | "players" | "none"
+    const notifyMode = req.body?.notifyMode || "all";
+    sendGameStartNotifications(game, notifyMode).catch(e => console.error("[EMAIL] Notification error:", e));
     res.json(game);
   });
 

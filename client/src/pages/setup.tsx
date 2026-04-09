@@ -41,6 +41,7 @@ export default function Setup() {
   const [dots, setDots] = useState<Record<string, number>>({ ...DEFAULT_DOTS });
   const [ldCtpMode, setLdCtpMode] = useState("simple");
   const [carryoverEnabled, setCarryoverEnabled] = useState(false);
+  const [notifyMode, setNotifyMode] = useState<"all" | "players" | "none">("all");
   const [creating, setCreating] = useState(false);
   const [editingHcpIdx, setEditingHcpIdx] = useState<number | null>(null);
   const [editHcpValue, setEditHcpValue] = useState("");
@@ -141,7 +142,7 @@ export default function Setup() {
         throw new Error("Not all players were added. Please try again.");
       }
 
-      await apiRequest("POST", `/api/games/${game.id}/start`);
+      await apiRequest("POST", `/api/games/${game.id}/start`, { notifyMode });
 
       toast({ title: "Game created!", description: `Code: ${game.code}` });
       navigate(`/game/${game.id}`);
@@ -512,6 +513,26 @@ export default function Setup() {
                   </div>
                 ))
               )}
+
+              {/* Notification mode */}
+              <div className="border-t border-border pt-3 mt-3">
+                <Label className="text-sm mb-2 block">Email Notifications</Label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([
+                    { value: "all" as const, label: "Everyone", desc: "All roster" },
+                    { value: "players" as const, label: "Players", desc: "This game" },
+                    { value: "none" as const, label: "None", desc: "Skip" },
+                  ]).map(opt => (
+                    <button key={opt.value} onClick={() => setNotifyMode(opt.value)}
+                      className={`py-2 px-2 rounded-lg text-center transition-all ${
+                        notifyMode === opt.value ? "border-2 border-primary bg-primary/10" : "border border-border"
+                      }`}>
+                      <div className="text-xs font-bold">{opt.label}</div>
+                      <div className="text-[9px] text-muted-foreground">{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="pt-4 flex gap-2">
                 <Button variant="secondary" className="flex-1 h-12" onClick={() => setStep("players")} data-testid="button-back-players">
