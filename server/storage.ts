@@ -99,6 +99,29 @@ async function initDatabase(): Promise<void> {
     try { await client.execute(m); } catch {}
   }
 
+  // Clean up duplicate score rows (bug from previous versions)
+  // Keep the row with gross_score if available, otherwise keep the one with lowest id
+  try {
+    const dupes = await client.execute(`
+      SELECT game_id, player_id, hole, COUNT(*) as cnt FROM scores
+      GROUP BY game_id, player_id, hole HAVING cnt > 1
+    `);
+    if (dupes.rows.length > 0) {
+      console.log(`[STORAGE] Found ${dupes.rows.length} duplicate score groups, cleaning up...`);
+      for (const d of dupes.rows as any[]) {
+        const rows = await client.execute({
+          sql: `SELECT id, gross_score FROM scores WHERE game_id = ? AND player_id = ? AND hole = ? ORDER BY CASE WHEN gross_score IS NOT NULL THEN 0 ELSE 1 END, id`,
+          args: [d.game_id, d.player_id, d.hole],
+        });
+        // Keep first (best), delete rest
+        for (let i = 1; i < rows.rows.length; i++) {
+          await client.execute({ sql: `DELETE FROM scores WHERE id = ?`, args: [(rows.rows[i] as any).id] });
+        }
+      }
+      console.log(`[STORAGE] Duplicate cleanup complete`);
+    }
+  } catch (e) { console.log("[STORAGE] Duplicate cleanup skipped:", e); }
+
   const result = await client.execute("SELECT COUNT(*) as count FROM games");
   const gameCount = (result.rows[0] as any)?.count ?? 0;
   console.log(`[STORAGE] Database ready — ${gameCount} games`);
@@ -156,15 +179,27 @@ export class DatabaseStorage {
     return await db.select().from(players).where(eq(players.rosterId, rosterId));
   }
   async upsertScore(gameId: number, playerId: number, hole: number, data: { grossScore?: number | null; longestDrive?: number | null; closestPin?: number | null }): Promise<Score> {
-    const existing = await db.select().from(scores)
-      .where(and(eq(scores.gameId, gameId), eq(scores.playerId, playerId), eq(scores.hole, hole)))
-      .get();
-    if (existing) {
+    // Find ALL matching rows (handle duplicates from previous bugs)
+    const allMatching = await db.select().from(scores)
+      .where(and(eq(scores.gameId, gameId), eq(scores.playerId, playerId), eq(scores.hole, hole)));
+    if (allMatching.length > 0) {
+      // Pick the best row (prefer one with grossScore)
+      const best = allMatching.find(r => r.grossScore !== null) || allMatching[0];
+      // Delete duplicates
+      for (const dup of allMatching) {
+        if (dup.id !== best.id) {
+          await db.delete(scores).where(eq(scores.id, dup.id));
+        }
+      }
+      // Update the best row
       const updateData: any = {};
       if (data.grossScore !== undefined) updateData.grossScore = data.grossScore;
       if (data.longestDrive !== undefined) updateData.longestDrive = data.longestDrive;
       if (data.closestPin !== undefined) updateData.closestPin = data.closestPin;
-      return (await db.update(scores).set(updateData).where(eq(scores.id, existing.id)).returning())[0];
+      if (Object.keys(updateData).length > 0) {
+        return (await db.update(scores).set(updateData).where(eq(scores.id, best.id)).returning())[0];
+      }
+      return best;
     }
     return (await db.insert(scores).values({
       gameId, playerId, hole,
