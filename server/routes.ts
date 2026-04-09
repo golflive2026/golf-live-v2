@@ -493,7 +493,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/health", async (_req, res) => {
-    res.json(await getStorageStatus());
+    const status = await getStorageStatus();
+    res.json({ ...status, version: "2025-04-09-v5", deployedAt: new Date().toISOString() });
+  });
+
+  // Debug endpoint — check LD/CTP data for a specific game+hole
+  app.get("/api/games/:id/debug-hole/:hole", async (req, res) => {
+    const gameId = Number(req.params.id);
+    const hole = Number(req.params.hole);
+    const game = await storage.getGame(gameId);
+    if (!game) return res.status(404).json({ error: "Game not found" });
+    const allScores = await storage.getScoresByGame(gameId);
+    const holeScores = allScores.filter(s => s.hole === hole);
+    const players = await storage.getPlayersByGame(gameId);
+    res.json({
+      gameStatus: game.status, hole,
+      players: players.map(p => {
+        const s = holeScores.find(sc => sc.playerId === p.id);
+        return { id: p.id, name: p.name, grossScore: s?.grossScore, longestDrive: s?.longestDrive, closestPin: s?.closestPin, hasScoreRow: !!s };
+      }),
+    });
   });
 
   app.get("/api/export", async (_req, res) => {

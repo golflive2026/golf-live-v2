@@ -207,20 +207,19 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
           {isLongestDrive && (() => {
             const ldWinner = scores.find(s => s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
             const setLdWinner = async (winnerId: number) => {
+              const alreadyWinner = ldWinner?.playerId === winnerId;
               try {
-                const alreadyWinner = ldWinner?.playerId === winnerId;
-                // Clear ALL LD values on this hole (distances + markers) for clean state
-                for (const pl of players) {
-                  const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
-                  if (ps?.longestDrive) {
-                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
-                  }
-                }
+                // Clear ALL LD values on this hole for clean state
+                const clearPromises = players
+                  .filter(pl => scores.find(s => s.playerId === pl.id && s.hole === currentHole)?.longestDrive)
+                  .map(pl => apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null }));
+                await Promise.all(clearPromises);
                 // Set new winner (or deselect if same player tapped again)
                 if (!alreadyWinner) {
                   await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: winnerId, hole: currentHole, longestDrive: 999 });
                 }
                 await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                toast({ title: alreadyWinner ? "LD cleared" : `LD: ${players.find(p => p.id === winnerId)?.name}` });
               } catch (e: any) { toast({ title: "LD save failed", description: e.message, variant: "destructive" }); }
             };
             return (
@@ -272,18 +271,17 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
           {isClosestPin && (() => {
             const ctpWinner = scores.find(s => s.hole === currentHole && s.closestPin && s.closestPin >= 999);
             const setCtpWinner = async (winnerId: number) => {
+              const alreadyWinner = ctpWinner?.playerId === winnerId;
               try {
-                const alreadyWinner = ctpWinner?.playerId === winnerId;
-                for (const pl of players) {
-                  const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
-                  if (ps?.closestPin) {
-                    await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
-                  }
-                }
+                const clearPromises = players
+                  .filter(pl => scores.find(s => s.playerId === pl.id && s.hole === currentHole)?.closestPin)
+                  .map(pl => apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null }));
+                await Promise.all(clearPromises);
                 if (!alreadyWinner) {
                   await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: winnerId, hole: currentHole, closestPin: 999 });
                 }
                 await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                toast({ title: alreadyWinner ? "CTP cleared" : `CTP: ${players.find(p => p.id === winnerId)?.name}` });
               } catch (e: any) { toast({ title: "CTP save failed", description: e.message, variant: "destructive" }); }
             };
             return (
