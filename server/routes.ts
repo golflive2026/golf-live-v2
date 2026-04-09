@@ -4,6 +4,7 @@ import { storage, exportAllData, importAllData, getStorageStatus } from "./stora
 import { COURSE_LIST, getCourse } from "@shared/schema";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
 import { computeBadges } from "./badges";
+import { sendGameStartNotifications } from "./email";
 
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -84,6 +85,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/games/:id/start", async (req, res) => {
     const game = await storage.updateGame(Number(req.params.id), { status: "active" });
     if (!game) return res.status(404).json({ error: "Game not found" });
+    // Fire-and-forget email notifications
+    sendGameStartNotifications(game).catch(e => console.error("[EMAIL] Notification error:", e));
     res.json(game);
   });
 
@@ -156,9 +159,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const { gameId, playerId, hole, grossScore, longestDrive, closestPin } = req.body;
       if (!gameId || !playerId || !hole) return res.status(400).json({ error: "gameId, playerId, and hole are required" });
-      // Block score edits on finished games
+      // Block gross score edits on finished games, but allow LD/CTP corrections
       const game = await storage.getGame(gameId);
-      if (game?.status === "finished") return res.status(403).json({ error: "Game is finished — scores are locked" });
+      if (game?.status === "finished" && grossScore !== undefined) {
+        return res.status(403).json({ error: "Game is finished — scores are locked" });
+      }
       const score = await storage.upsertScore(gameId, playerId, hole, {
         grossScore: grossScore !== undefined ? grossScore : undefined,
         longestDrive: longestDrive !== undefined ? longestDrive : undefined,
@@ -262,7 +267,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/roster", async (_req, res) => {
     const list = await storage.listRoster();
     // Strip PINs — never expose to clients
-    res.json(list.map(({ pin, ...rest }) => ({ ...rest, hasPin: !!pin })));
+    res.json(list.map(({ pin, email, ...rest }) => ({ ...rest, hasPin: !!pin, hasEmail: !!email, notificationsEnabled: rest.notificationsEnabled })));
   });
 
   app.post("/api/roster", async (req, res) => {
@@ -293,12 +298,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ok: true, restored: false });
   });
 
-  // Get single roster player (public info — no pin)
+  // Get single roster player (public info — no pin, masked email)
   app.get("/api/roster/:id", async (req, res) => {
     const rp = await storage.getRosterPlayer(Number(req.params.id));
     if (!rp) return res.status(404).json({ error: "Player not found" });
-    const { pin, ...safe } = rp;
-    res.json({ ...safe, hasPin: !!pin });
+    const { pin, email, ...safe } = rp;
+    const maskedEmail = email ? email.replace(/^(.{2})(.*)(@.*)$/, "$1***$3") : null;
+    res.json({ ...safe, hasPin: !!pin, email: maskedEmail, hasEmail: !!email });
   });
 
   // Claim profile: link a game-player to a roster entry, optionally set PIN
@@ -362,6 +368,36 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const newValue = rp.statsPublic ? 0 : 1;
       await storage.updateRosterPlayer(rosterId, { statsPublic: newValue });
       res.json({ statsPublic: newValue });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Set email (requires PIN)
+  app.post("/api/roster/:id/set-email", async (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = await storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Roster player not found" });
+      const { pin, email } = req.body;
+      if (!rp.pin || rp.pin !== pin) return res.status(403).json({ error: "Invalid PIN" });
+      if (email && typeof email === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+      await storage.updateRosterPlayer(rosterId, { email: email || null } as any);
+      res.json({ ok: true, email: email || null });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Toggle notifications (requires PIN)
+  app.post("/api/roster/:id/toggle-notifications", async (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = await storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Roster player not found" });
+      const { pin } = req.body;
+      if (!rp.pin || rp.pin !== pin) return res.status(403).json({ error: "Invalid PIN" });
+      const newValue = rp.notificationsEnabled ? 0 : 1;
+      await storage.updateRosterPlayer(rosterId, { notificationsEnabled: newValue } as any);
+      res.json({ notificationsEnabled: newValue });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

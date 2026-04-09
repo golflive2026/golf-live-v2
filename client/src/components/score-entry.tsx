@@ -7,6 +7,7 @@ import { type CourseData, type Game, type Player, type Score, type Achievement, 
 import { getScoreLabel, getStrokesForHole, getNetScoreForHole, buildScoresMap } from "@/lib/golf";
 import { playScoreSound } from "@/lib/sounds";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { ChevronLeft, ChevronRight, Minus, Plus, Ruler, Target } from "lucide-react";
 
 interface Props {
@@ -22,6 +23,7 @@ interface Props {
 export default function ScoreEntry({ game, players, scores, selectedPlayerId, onSelectPlayer, course, achievements }: Props) {
   const [currentHole, setCurrentHole] = useState(1);
   const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
 
   const scoresMap = useMemo(() => buildScoresMap(scores), [scores]);
   const player = players.find(p => p.id === selectedPlayerId);
@@ -219,7 +221,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                   await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: winnerId, hole: currentHole, longestDrive: 999 });
                 }
                 await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
-              } catch (e) { console.error("LD save failed", e); }
+              } catch (e: any) { toast({ title: "LD save failed", description: e.message, variant: "destructive" }); }
             };
             return (
               <div className="border-t border-border pt-4 space-y-3">
@@ -282,7 +284,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                   await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: winnerId, hole: currentHole, closestPin: 999 });
                 }
                 await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
-              } catch (e) { console.error("CTP save failed", e); }
+              } catch (e: any) { toast({ title: "CTP save failed", description: e.message, variant: "destructive" }); }
             };
             return (
               <div className="border-t border-border pt-4 space-y-3">
