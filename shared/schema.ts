@@ -77,6 +77,21 @@ export const DEFAULT_DOTS = {
   dotThreePutt: -1,
   dotWater: -1,
   dotOb: -1,
+  // New categories
+  dotPolie: 1,
+  dotBarkie: 1,
+  dotGoldenFerret: 2,
+  dotArnie: 1,
+  dotHogan: 1,
+  dotSharkie: 1,
+  dotFourPutt: -2,
+  dotTigerLd: 1,
+  dotMole: -1,
+  dotFoozle: -1,
+  dotBounceBack: 1,
+  dotSnowman: -2,
+  dotHoleInOne: 5,
+  carryoverEnabled: 0,
 } as const;
 
 export type GameMode = "stroke" | "stableford" | "action";
@@ -122,6 +137,23 @@ export const games = sqliteTable("games", {
   dotThreePutt: integer("dot_three_putt").default(-1),
   dotWater: integer("dot_water").default(-1),
   dotOb: integer("dot_ob").default(-1),
+  // New dot categories
+  dotPolie: integer("dot_polie").default(1),
+  dotBarkie: integer("dot_barkie").default(1),
+  dotGoldenFerret: integer("dot_golden_ferret").default(2),
+  dotArnie: integer("dot_arnie").default(1),
+  dotHogan: integer("dot_hogan").default(1),
+  dotSharkie: integer("dot_sharkie").default(1),
+  dotFourPutt: integer("dot_four_putt").default(-2),
+  dotTigerLd: integer("dot_tiger_ld").default(1),
+  dotMole: integer("dot_mole").default(-1),
+  dotFoozle: integer("dot_foozle").default(-1),
+  dotBounceBack: integer("dot_bounce_back").default(1),
+  dotSnowman: integer("dot_snowman").default(-2),
+  dotHoleInOne: integer("dot_hole_in_one").default(5),
+  carryoverEnabled: integer("carryover_enabled").default(0),
+  // LD/CTP mode
+  ldCtpMode: text("ld_ctp_mode").notNull().default("simple"),
 });
 
 export const insertGameSchema = createInsertSchema(games).omit({ id: true });
@@ -170,6 +202,16 @@ export const achievements = sqliteTable("achievements", {
   threePutt: integer("three_putt").notNull().default(0),
   water: integer("water").notNull().default(0),
   ob: integer("ob").notNull().default(0),
+  // New achievement fields
+  polie: integer("polie").notNull().default(0),
+  barkie: integer("barkie").notNull().default(0),
+  goldenFerret: integer("golden_ferret").notNull().default(0),
+  arnie: integer("arnie").notNull().default(0),
+  hogan: integer("hogan").notNull().default(0),
+  sharkie: integer("sharkie").notNull().default(0),
+  fourPutt: integer("four_putt").notNull().default(0),
+  tigerLd: integer("tiger_ld").notNull().default(0),
+  mole: integer("mole").notNull().default(0),
 });
 
 export type Achievement = typeof achievements.$inferSelect;

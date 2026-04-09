@@ -103,23 +103,53 @@ export function computeBirdieEagle(entries: LeaderboardEntry[], birdiePot: numbe
 
 export interface SpecialBetResult { hole: number; type: "longest_drive" | "closest_pin"; winnerId: number | null; winnerName: string; winnerValue: number; payout: number; }
 
-export function computeSpecialBets(allScores: Score[], players: Player[], longestDriveBet: number, closestPinBet: number, course: CourseData) {
+export function computeSpecialBets(
+  allScores: Score[], players: Player[], longestDriveBet: number, closestPinBet: number,
+  course: CourseData, ldCtpMode: string = "distance",
+) {
   const scoresMap = buildScoresMap(allScores);
   const playerTotals = new Map<number, number>();
   players.forEach(p => playerTotals.set(p.id, 0));
-  function findWinner(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", findMin: boolean): SpecialBetResult {
+
+  function findWinnerByDistance(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", findMin: boolean): SpecialBetResult {
     let bestId: number | null = null, bestDist = findMin ? Infinity : 0, bestName = "-";
+    const participants: number[] = [];
     for (const p of players) {
       const val = scoresMap.get(p.id)?.get(hole)?.[field];
-      if (val && val > 0 && (findMin ? val < bestDist : val > bestDist)) { bestDist = val; bestId = p.id; bestName = p.name; }
+      if (val && val > 0) {
+        participants.push(p.id);
+        if (findMin ? val < bestDist : val > bestDist) { bestDist = val; bestId = p.id; bestName = p.name; }
+      }
     }
-    const payout = bestId ? betAmt * (players.length - 1) : 0;
+    // Distance mode: only participants pay/receive
+    const payout = bestId ? betAmt * (participants.length - 1) : 0;
     if (bestId) {
       playerTotals.set(bestId, (playerTotals.get(bestId) || 0) + payout);
-      for (const p of players) { if (p.id !== bestId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
+      for (const pid of participants) { if (pid !== bestId) playerTotals.set(pid, (playerTotals.get(pid) || 0) - betAmt); }
     }
     return { hole, type, winnerId: bestId, winnerName: bestName, winnerValue: bestDist === Infinity ? 0 : bestDist, payout };
   }
+
+  function findWinnerByMarker(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin"): SpecialBetResult {
+    // Simple mode: winner is marked with value 999, ALL players participate
+    let winnerId: number | null = null, winnerName = "-";
+    for (const p of players) {
+      const val = scoresMap.get(p.id)?.get(hole)?.[field];
+      if (val && val >= 999) { winnerId = p.id; winnerName = p.name; break; }
+    }
+    const payout = winnerId ? betAmt * (players.length - 1) : 0;
+    if (winnerId) {
+      playerTotals.set(winnerId, (playerTotals.get(winnerId) || 0) + payout);
+      for (const p of players) { if (p.id !== winnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
+    }
+    return { hole, type, winnerId, winnerName, winnerValue: 0, payout };
+  }
+
+  const isSimple = ldCtpMode === "simple";
+  const findWinner = isSimple
+    ? (hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", _findMin: boolean) => findWinnerByMarker(hole, field, betAmt, type)
+    : findWinnerByDistance;
+
   const longestDrive = course.longestDriveHoles.map(h => findWinner(h, "longestDrive", longestDriveBet, "longest_drive", false));
   const closestPin = course.par3Holes.map(h => findWinner(h, "closestPin", closestPinBet, "closest_pin", true));
   return { longestDrive, closestPin, playerTotals };
@@ -129,12 +159,12 @@ export interface SettlementEntry { playerId: number; playerName: string; matchPl
 
 export function computeSettlement(
   entries: LeaderboardEntry[], allScores: Score[], players: Player[],
-  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number },
+  game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number; ldCtpMode?: string },
   course: CourseData,
 ): SettlementEntry[] {
   const matchPlay = computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
   const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
-  const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course);
+  const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course, game.ldCtpMode);
   const settlement: SettlementEntry[] = players.map(p => {
     const mp = matchPlay.find(r => r.playerId === p.id);
     const be = birdieEagle.find(r => r.playerId === p.id);
@@ -248,6 +278,12 @@ export interface DotConfig {
   dotSandy: number; dotChipIn: number; dotGreenie: number;
   dotLongestDrive: number; dotClosestPin: number;
   dotThreePutt: number; dotWater: number; dotOb: number;
+  // New categories
+  dotPolie: number; dotBarkie: number; dotGoldenFerret: number;
+  dotArnie: number; dotHogan: number; dotSharkie: number;
+  dotFourPutt: number; dotTigerLd: number; dotMole: number;
+  dotFoozle: number; dotBounceBack: number; dotSnowman: number; dotHoleInOne: number;
+  carryoverEnabled: number;
 }
 
 export interface ActionDotEntry {
@@ -260,6 +296,11 @@ export interface ActionDotEntry {
     sandies: number; chipIns: number; greenies: number;
     longestDrives: number; closestPins: number;
     threePutts: number; waters: number; obs: number;
+    // New
+    polies: number; barkies: number; goldenFerrets: number;
+    arnies: number; hogans: number; sharkies: number;
+    fourPutts: number; tigerLds: number; moles: number;
+    foozles: number; bounceBacks: number; snowmen: number; holesInOne: number;
   };
 }
 
@@ -279,47 +320,153 @@ export function computeActionDots(
   const scoresMap = buildScoresMap(allScores);
   const achievementsMap = buildAchievementsMap(allAchievements);
 
+  // Pre-compute per-player NET scores for bounce-back detection
+  const playerNetByHole = new Map<number, (number | null)[]>();
+  for (const p of players) {
+    const nets: (number | null)[] = [];
+    const ps = scoresMap.get(p.id) || new Map();
+    for (let i = 0; i < 18; i++) {
+      const gross = ps.get(i + 1)?.grossScore ?? null;
+      nets.push(gross !== null ? getNetScoreForHole(gross, p.handicap, i, course) : null);
+    }
+    playerNetByHole.set(p.id, nets);
+  }
+
+  // Carryover tracking (across all players)
+  let greenieCarryover = 0;
+  let ldCarryover = 0;
+  const par3Holes = course.par3Holes.map(h => h - 1); // 0-indexed
+  const ldHoles = course.longestDriveHoles.map(h => h - 1);
+
+  // For carryover: check if anyone won on each eligible hole
+  const greenieWonByHole = new Map<number, boolean>();
+  const ldWonByHole = new Map<number, boolean>();
+  if (dotConfig.carryoverEnabled) {
+    for (const h0 of par3Holes) {
+      let won = false;
+      for (const p of players) {
+        const ach = achievementsMap.get(p.id)?.get(h0 + 1);
+        if (ach?.greenie || ach?.closestPinWon) { won = true; break; }
+      }
+      greenieWonByHole.set(h0, won);
+    }
+    for (const h0 of ldHoles) {
+      let won = false;
+      for (const p of players) {
+        const ach = achievementsMap.get(p.id)?.get(h0 + 1);
+        if (ach?.longestDriveWon) { won = true; break; }
+      }
+      ldWonByHole.set(h0, won);
+    }
+  }
+
+  // Compute carryover multipliers per hole
+  const greenieMultiplier = new Map<number, number>();
+  const ldMultiplier = new Map<number, number>();
+  if (dotConfig.carryoverEnabled) {
+    let carry = 0;
+    for (const h0 of par3Holes) {
+      if (greenieWonByHole.get(h0)) {
+        greenieMultiplier.set(h0, 1 + carry);
+        carry = 0;
+      } else {
+        greenieMultiplier.set(h0, 0);
+        carry++;
+      }
+    }
+    carry = 0;
+    for (const h0 of ldHoles) {
+      if (ldWonByHole.get(h0)) {
+        ldMultiplier.set(h0, 1 + carry);
+        carry = 0;
+      } else {
+        ldMultiplier.set(h0, 0);
+        carry++;
+      }
+    }
+  }
+
   const entries: ActionDotEntry[] = players.map(player => {
     const playerScores = scoresMap.get(player.id) || new Map<number, Score>();
     const playerAch = achievementsMap.get(player.id) || new Map<number, Achievement>();
+    const playerNets = playerNetByHole.get(player.id) || [];
     let totalDots = 0;
     const holeDots: ActionDotEntry["holeDots"] = [];
-    const breakdown = { birdies: 0, eagles: 0, albatrosses: 0, doubleBogeys: 0, sandies: 0, chipIns: 0, greenies: 0, longestDrives: 0, closestPins: 0, threePutts: 0, waters: 0, obs: 0 };
+    const breakdown = {
+      birdies: 0, eagles: 0, albatrosses: 0, doubleBogeys: 0,
+      sandies: 0, chipIns: 0, greenies: 0, longestDrives: 0, closestPins: 0,
+      threePutts: 0, waters: 0, obs: 0,
+      polies: 0, barkies: 0, goldenFerrets: 0, arnies: 0, hogans: 0, sharkies: 0,
+      fourPutts: 0, tigerLds: 0, moles: 0, foozles: 0, bounceBacks: 0, snowmen: 0, holesInOne: 0,
+    };
 
     for (let i = 0; i < 18; i++) {
       const hole = i + 1;
       const score = playerScores.get(hole);
       const ach = playerAch.get(hole);
       const gross = score?.grossScore ?? null;
+      const net = playerNets[i];
+      const par = course.holePars[i];
       let autoDots = 0, manualDots = 0;
 
-      if (gross !== null) {
-        // Auto-detect from NET score
-        const net = getNetScoreForHole(gross, player.handicap, i, course)!;
-        const par = course.holePars[i];
+      if (gross !== null && net !== null) {
         const netDiff = net - par;
+
+        // Score-based auto-detection
+        if (gross === 1) { breakdown.holesInOne++; autoDots += dotConfig.dotHoleInOne; }
         if (netDiff <= -3) { breakdown.albatrosses++; autoDots += dotConfig.dotAlbatross; }
         else if (netDiff === -2) { breakdown.eagles++; autoDots += dotConfig.dotEagle; }
         else if (netDiff === -1) { breakdown.birdies++; autoDots += dotConfig.dotBirdie; }
         else if (netDiff >= 2) { breakdown.doubleBogeys++; autoDots += dotConfig.dotDoubleBogey; }
+
+        // Snowman: gross >= 8
+        if (gross >= 8) { breakdown.snowmen++; autoDots += dotConfig.dotSnowman; }
+
+        // Bounce Back: par or better after previous hole was double bogey+
+        if (i > 0 && playerNets[i - 1] !== null) {
+          const prevNet = playerNets[i - 1]!;
+          const prevPar = course.holePars[i - 1];
+          if (prevNet - prevPar >= 2 && netDiff <= 0) {
+            breakdown.bounceBacks++; autoDots += dotConfig.dotBounceBack;
+          }
+        }
       }
 
       // Manual achievements
       if (ach) {
         if (ach.sandy) { breakdown.sandies++; manualDots += dotConfig.dotSandy; }
         if (ach.chipIn) { breakdown.chipIns++; manualDots += dotConfig.dotChipIn; }
-        if (ach.greenie) {
-          // Greenie only counts if NET score <= par on that hole
-          if (gross !== null) {
-            const net = getNetScoreForHole(gross, player.handicap, i, course)!;
-            if (net <= course.holePars[i]) {
-              breakdown.greenies++; manualDots += dotConfig.dotGreenie;
-            }
+        if (ach.polie) { breakdown.polies++; manualDots += dotConfig.dotPolie; }
+        if (ach.barkie) { breakdown.barkies++; manualDots += dotConfig.dotBarkie; }
+        if (ach.goldenFerret) { breakdown.goldenFerrets++; manualDots += dotConfig.dotGoldenFerret; }
+        if (ach.arnie) { breakdown.arnies++; manualDots += dotConfig.dotArnie; }
+        if (ach.hogan) { breakdown.hogans++; manualDots += dotConfig.dotHogan; }
+        if (ach.sharkie) { breakdown.sharkies++; manualDots += dotConfig.dotSharkie; }
+        if (ach.mole) { breakdown.moles++; manualDots += dotConfig.dotMole; }
+        if (ach.tigerLd) { breakdown.tigerLds++; manualDots += dotConfig.dotTigerLd; }
+
+        // Greenie with foozle mechanic
+        if (ach.greenie || ach.closestPinWon) {
+          if (gross !== null && net !== null && net <= par) {
+            // Earned greenie/CTP — apply carryover multiplier if enabled
+            const mult = dotConfig.carryoverEnabled ? (greenieMultiplier.get(i) || 1) : 1;
+            breakdown.greenies++;
+            manualDots += (ach.greenie ? dotConfig.dotGreenie : dotConfig.dotClosestPin) * mult;
+          } else if (gross !== null && net !== null && net > par) {
+            // Foozle: had CTP but missed par → penalty
+            breakdown.foozles++; manualDots += dotConfig.dotFoozle;
           }
         }
-        if (ach.longestDriveWon) { breakdown.longestDrives++; manualDots += dotConfig.dotLongestDrive; }
-        if (ach.closestPinWon) { breakdown.closestPins++; manualDots += dotConfig.dotClosestPin; }
+
+        // LD won with carryover
+        if (ach.longestDriveWon) {
+          const mult = dotConfig.carryoverEnabled ? (ldMultiplier.get(i) || 1) : 1;
+          breakdown.longestDrives++; manualDots += dotConfig.dotLongestDrive * mult;
+        }
+
+        // Negative manual
         if (ach.threePutt) { breakdown.threePutts++; manualDots += dotConfig.dotThreePutt; }
+        if (ach.fourPutt) { breakdown.fourPutts++; manualDots += dotConfig.dotFourPutt; }
         if (ach.water) { breakdown.waters++; manualDots += dotConfig.dotWater; }
         if (ach.ob) { breakdown.obs++; manualDots += dotConfig.dotOb; }
       }

@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type CourseData, type Game, type Player, type Score, type Achievement, getStrokesForHole } from "@shared/schema";
-import { buildScoresMap, getScoreLabel, getScoreBgClass } from "@/lib/golf";
+import { type CourseData, type Game, type Player, type Score, type Achievement, getStrokesForHole, getStablefordPoints } from "@shared/schema";
+import { buildScoresMap, getScoreLabel, getScoreBgClass, getNetScoreForHole } from "@/lib/golf";
 import { playScoreSound } from "@/lib/sounds";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
@@ -35,7 +35,7 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
   // Report initial hole to parent
   useEffect(() => { onHoleChange?.(currentHole); }, []);
 
-  const scoresMap = buildScoresMap(scores);
+  const scoresMap = useMemo(() => buildScoresMap(scores), [scores]);
   const par = course.holePars[currentHole - 1];
   const hcpIndex = course.holeHcp[currentHole - 1];
   const prevAllScoredRef = useRef(false);
@@ -108,7 +108,7 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
       </Card>
 
       {/* Quick score labels */}
-      <div className="grid gap-0.5" style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem) 3rem` }}>
+      <div className="grid gap-0.5" style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.75rem) 3rem` }}>
         <div className="text-[10px] text-muted-foreground font-medium px-2">Player</div>
         {quickValues.map(v => (
           <div key={v} className="text-center text-[10px] text-muted-foreground font-medium">
@@ -124,68 +124,96 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
         const strokes = getStrokesForHole(player.handicap, course.holeHcp[currentHole - 1]);
         const isCustomScore = existing != null && !quickValues.includes(existing);
         return (
-          <div
-            key={player.id}
-            className={`grid gap-0.5 items-center rounded-lg py-1 transition-colors ${existing != null ? "opacity-70" : ""}`}
-            style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.5rem) 3rem` }}
-          >
-            <div className="flex items-center gap-1.5 px-1 min-w-0">
-              {existing != null ? (
-                <Check className="w-3.5 h-3.5 text-green-500 shrink-0" />
-              ) : (
-                <div className="w-3.5 shrink-0" />
-              )}
-              <div className="min-w-0">
-                <span className="text-xs font-medium truncate block leading-tight">{player.name}</span>
-                <span className="text-[10px] text-muted-foreground leading-tight">
-                  {player.handicap}hcp{strokes > 0 && <span className="text-primary font-semibold"> +{strokes}</span>}
-                </span>
+          <div key={player.id}>
+            <div
+              className={`grid gap-0.5 items-center rounded-lg py-1 transition-colors ${existing != null ? "opacity-70" : ""}`}
+              style={{ gridTemplateColumns: `1fr repeat(${quickValues.length}, 2.75rem) 3rem` }}
+            >
+              <div className="flex items-center gap-1.5 px-1 min-w-0">
+                {existing != null ? (
+                  (() => {
+                    if (game.gameMode === "stableford") {
+                      const net = getNetScoreForHole(existing, player.handicap, currentHole - 1, course);
+                      const pts = net !== null ? getStablefordPoints(net, par) : null;
+                      const ptsColor = pts === null ? "" : pts === 0 ? "text-red-500" : pts === 1 ? "text-orange-500" : pts === 2 ? "text-muted-foreground" : "text-green-600";
+                      return <span className={`text-[10px] font-bold shrink-0 ${ptsColor}`}>{pts != null ? `${pts}pt` : ""}</span>;
+                    }
+                    return <Check className="w-3.5 h-3.5 text-green-500 shrink-0" />;
+                  })()
+                ) : (
+                  <div className="w-3.5 shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <span className="text-xs font-medium truncate block leading-tight">{player.name}</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">
+                    {player.handicap}hcp{strokes > 0 && <span className="text-primary font-semibold"> +{strokes}</span>}
+                  </span>
+                </div>
               </div>
-            </div>
-            {quickValues.map(v => (
-              <button
-                key={v}
-                onClick={() => saveScore(player.id, v)}
-                className={`h-10 rounded-md text-sm font-bold transition-all ${
-                  existing === v
-                    ? "golf-gradient text-white ring-2 ring-primary/50"
-                    : `bg-muted/60 hover:bg-muted active:scale-95 ${
-                        v < par ? "text-green-600 dark:text-green-400" : v === par ? "text-foreground" : "text-red-500"
-                      }`
-                }`}
-              >
-                {v}
-              </button>
-            ))}
-            {/* Custom score input for anything beyond the quick buttons */}
-            <Input
-              type="number"
-              className={`h-10 w-12 text-center text-sm font-bold px-1 ${isCustomScore ? "ring-2 ring-primary/50 bg-primary/10" : ""}`}
-              placeholder="..."
-              min={1}
-              defaultValue={isCustomScore ? existing : ""}
-              key={`custom-${player.id}-${currentHole}-${isCustomScore ? existing : ""}`}
-              onBlur={e => {
-                const val = parseInt(e.target.value);
-                if (val && val >= 1) saveScore(player.id, val);
-              }}
-              onKeyDown={e => {
-                if (e.key === "Enter") {
-                  const val = parseInt((e.target as HTMLInputElement).value);
+              {quickValues.map(v => (
+                <button
+                  key={v}
+                  onClick={() => saveScore(player.id, v)}
+                  className={`h-11 rounded-md text-sm font-bold transition-all ${
+                    existing === v
+                      ? "golf-gradient text-white ring-2 ring-primary/50"
+                      : `bg-muted/60 hover:bg-muted active:scale-95 ${
+                          v < par ? "text-green-600 dark:text-green-400" : v === par ? "text-foreground" : "text-red-500"
+                        }`
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+              {/* Custom score input for anything beyond the quick buttons */}
+              <Input
+                type="number"
+                className={`h-11 w-12 text-center text-sm font-bold px-1 ${isCustomScore ? "ring-2 ring-primary/50 bg-primary/10" : ""}`}
+                placeholder="..."
+                min={1}
+                defaultValue={isCustomScore ? existing : ""}
+                key={`custom-${player.id}-${currentHole}-${isCustomScore ? existing : ""}`}
+                onBlur={e => {
+                  const val = parseInt(e.target.value);
                   if (val && val >= 1) saveScore(player.id, val);
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-            />
+                }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    const val = parseInt((e.target as HTMLInputElement).value);
+                    if (val && val >= 1) saveScore(player.id, val);
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+              />
+            </div>
+            {game.gameMode === "action" && existing != null && (
+              <div className="flex justify-end gap-1 px-1 -mt-1 mb-1">
+                {[
+                  { key: "polie", emoji: "\u26f3", field: "polie" },
+                  { key: "sandy", emoji: "\u26f1\ufe0f", field: "sandy" },
+                  { key: "threePutt", emoji: "\u21a9\ufe0f", field: "threePutt" },
+                  { key: "water", emoji: "\ud83d\udca7", field: "water" },
+                ].map(a => {
+                  const ach = achievements?.find(x => x.playerId === player.id && x.hole === currentHole);
+                  const active = ach && (ach as any)[a.field];
+                  return (
+                    <button key={a.key} onClick={async () => {
+                      await apiRequest("POST", "/api/achievements", {
+                        gameId: game.id, playerId: player.id, hole: currentHole,
+                        [a.field]: active ? 0 : 1,
+                      });
+                      queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                    }}
+                      className={`w-8 h-8 rounded text-sm ${active ? "bg-primary/20" : "bg-muted/30"}`}>
+                      {a.emoji}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}
-
-      {game.gameMode === "action" && (
-        <p className="text-xs text-muted-foreground text-center mt-2">
-          Use Detail tab for achievement tracking
-        </p>
-      )}
 
       <div className="flex gap-3 pt-2">
         <Button

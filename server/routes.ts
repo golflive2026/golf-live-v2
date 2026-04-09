@@ -26,11 +26,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/games", async (req, res) => {
     try {
-      const { name, date, courseId, gameMode,
+      const { name, date, courseId, gameMode, ldCtpMode,
         first9Bet, second9Bet, wholeGameBet, birdiePot, eaglePot, longestDriveBet, closestPinBet,
         dotValue, dotBirdie, dotEagle, dotAlbatross, dotDoubleBogey,
         dotSandy, dotChipIn, dotGreenie, dotLongestDrive, dotClosestPin,
         dotThreePutt, dotWater, dotOb,
+        dotPolie, dotBarkie, dotGoldenFerret, dotArnie, dotHogan, dotSharkie,
+        dotFourPutt, dotTigerLd, dotMole, dotFoozle, dotBounceBack, dotSnowman, dotHoleInOne,
+        carryoverEnabled,
       } = req.body;
       if (!name || !date) return res.status(400).json({ error: "Name and date are required" });
       let code = generateCode();
@@ -43,12 +46,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         first9Bet: first9Bet ?? 5, second9Bet: second9Bet ?? 5, wholeGameBet: wholeGameBet ?? 15,
         birdiePot: birdiePot ?? 3, eaglePot: eaglePot ?? 30,
         longestDriveBet: longestDriveBet ?? 3, closestPinBet: closestPinBet ?? 3,
+        ldCtpMode: ldCtpMode || "simple",
         dotValue: dotValue ?? 1,
         dotBirdie: dotBirdie ?? 1, dotEagle: dotEagle ?? 2, dotAlbatross: dotAlbatross ?? 5,
         dotDoubleBogey: dotDoubleBogey ?? -1,
         dotSandy: dotSandy ?? 1, dotChipIn: dotChipIn ?? 1, dotGreenie: dotGreenie ?? 1,
         dotLongestDrive: dotLongestDrive ?? 1, dotClosestPin: dotClosestPin ?? 1,
         dotThreePutt: dotThreePutt ?? -1, dotWater: dotWater ?? -1, dotOb: dotOb ?? -1,
+        dotPolie: dotPolie ?? 1, dotBarkie: dotBarkie ?? 1, dotGoldenFerret: dotGoldenFerret ?? 2,
+        dotArnie: dotArnie ?? 1, dotHogan: dotHogan ?? 1, dotSharkie: dotSharkie ?? 1,
+        dotFourPutt: dotFourPutt ?? -2, dotTigerLd: dotTigerLd ?? 1, dotMole: dotMole ?? -1,
+        dotFoozle: dotFoozle ?? -1, dotBounceBack: dotBounceBack ?? 1, dotSnowman: dotSnowman ?? -2,
+        dotHoleInOne: dotHoleInOne ?? 5, carryoverEnabled: carryoverEnabled ?? 0,
       });
       res.json(game);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -166,19 +175,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/games/:id/full", async (req, res) => {
     const game = await storage.getGame(Number(req.params.id));
     if (!game) return res.status(404).json({ error: "Game not found" });
-    const [gamePlayers, gameScores, gameAchievements, photoCount] = await Promise.all([
+    const [gamePlayers, gameScores, photoCount] = await Promise.all([
       storage.getPlayersByGame(game.id),
       storage.getScoresByGame(game.id),
-      storage.getAchievementsByGame(game.id),
       storage.getPhotoCountByGame(game.id),
     ]);
+    const gameAchievements = game.gameMode === "action"
+      ? await storage.getAchievementsByGame(game.id)
+      : [];
     res.json({ game, players: gamePlayers, scores: gameScores, achievements: gameAchievements, photoCount });
   });
 
   // === ACHIEVEMENTS (Action/Dots mode) ===
   app.post("/api/achievements", async (req, res) => {
     try {
-      const { gameId, playerId, hole, sandy, chipIn, greenie, longestDriveWon, closestPinWon, threePutt, water, ob } = req.body;
+      const { gameId, playerId, hole, sandy, chipIn, greenie, longestDriveWon, closestPinWon, threePutt, water, ob, polie, barkie, goldenFerret, arnie, hogan, sharkie, fourPutt, tigerLd, mole } = req.body;
       if (!gameId || !playerId || !hole) return res.status(400).json({ error: "gameId, playerId, and hole are required" });
       const game = await storage.getGame(gameId);
       if (game?.status === "finished") return res.status(403).json({ error: "Game is finished — scores are locked" });
@@ -191,6 +202,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         threePutt: threePutt !== undefined ? threePutt : undefined,
         water: water !== undefined ? water : undefined,
         ob: ob !== undefined ? ob : undefined,
+        polie: polie !== undefined ? polie : undefined,
+        barkie: barkie !== undefined ? barkie : undefined,
+        goldenFerret: goldenFerret !== undefined ? goldenFerret : undefined,
+        arnie: arnie !== undefined ? arnie : undefined,
+        hogan: hogan !== undefined ? hogan : undefined,
+        sharkie: sharkie !== undefined ? sharkie : undefined,
+        fourPutt: fourPutt !== undefined ? fourPutt : undefined,
+        tigerLd: tigerLd !== undefined ? tigerLd : undefined,
+        mole: mole !== undefined ? mole : undefined,
       });
       res.json(achievement);
     } catch (e: any) { res.status(500).json({ error: e.message }); }

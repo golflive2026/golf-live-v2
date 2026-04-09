@@ -457,6 +457,11 @@ const DOT_CONFIG: DotConfig = {
   dotSandy: 1, dotChipIn: 1, dotGreenie: 1,
   dotLongestDrive: 1, dotClosestPin: 1,
   dotThreePutt: -1, dotWater: -1, dotOb: -1,
+  dotPolie: 1, dotBarkie: 1, dotGoldenFerret: 2,
+  dotArnie: 1, dotHogan: 1, dotSharkie: 1,
+  dotFourPutt: -2, dotTigerLd: 1, dotMole: -1,
+  dotFoozle: -1, dotBounceBack: 1, dotSnowman: -2, dotHoleInOne: 5,
+  carryoverEnabled: 0,
 };
 
 function toSharedPlayer(p: Player): SharedPlayer {
@@ -475,6 +480,7 @@ function randomAchievements(players: SharedPlayer[], scores: SharedScore[], cour
       const score = scores.find(s => s.playerId === p.id && s.hole === hole);
       if (!score?.grossScore) continue;
       const par = courseData.holePars[hole - 1];
+      const isPar5 = par === 5;
       achs.push({
         id: achId++, gameId: p.gameId, playerId: p.id, hole,
         sandy: Math.random() < 0.08 ? 1 : 0,
@@ -485,6 +491,15 @@ function randomAchievements(players: SharedPlayer[], scores: SharedScore[], cour
         threePutt: Math.random() < 0.12 ? 1 : 0,
         water: Math.random() < 0.06 ? 1 : 0,
         ob: Math.random() < 0.04 ? 1 : 0,
+        polie: Math.random() < 0.15 ? 1 : 0,
+        barkie: Math.random() < 0.03 ? 1 : 0,
+        goldenFerret: Math.random() < 0.01 ? 1 : 0,
+        arnie: Math.random() < 0.05 ? 1 : 0,
+        hogan: Math.random() < 0.08 ? 1 : 0,
+        sharkie: Math.random() < 0.02 ? 1 : 0,
+        fourPutt: Math.random() < 0.03 ? 1 : 0,
+        tigerLd: isPar5 ? (Math.random() < 0.1 ? 1 : 0) : 0,
+        mole: Math.random() < 0.04 ? 1 : 0,
       });
     }
   }
@@ -613,7 +628,159 @@ console.log("\n--- Test 12: Action with no achievements ---");
   console.log("  Action with no achievements - OK");
 }
 
+// Test 13: Carryover mechanic
+console.log("\n--- Test 13: Carryover mechanic ---");
+{
+  const courseData = getCourse("st-sofia");
+  const p: SharedPlayer[] = [
+    { id: 7001, gameId: 1, name: "A", handicap: 10, rosterId: null },
+    { id: 7002, gameId: 1, name: "B", handicap: 15, rosterId: null },
+  ];
+  const scores = generateScores(p as any[], courseData as any, nextId, false).map(toSharedScore);
+  // No achievements at all — all greenies/CTP should carry over
+  const carryConfig = { ...DOT_CONFIG, carryoverEnabled: 1 };
+  const dotEntries = computeActionDots(p, scores, [], carryConfig, courseData);
+  // With no greenie/CTP toggled, carryover accumulates but no one collects — all zeros for greenies
+  for (const e of dotEntries) {
+    assert(e.breakdown.greenies === 0, `Carryover: no greenies should be awarded without toggles`);
+  }
+  const settlement = computeActionSettlement(dotEntries, 1);
+  const sum = settlement.reduce((s, e) => s + e.grandTotal, 0);
+  assert(nearZero(sum), `Carryover: settlement sum = ${sum}`);
+  console.log("  Carryover mechanic - OK");
+}
+
+// Test 14: Foozle penalty
+console.log("\n--- Test 14: Foozle penalty ---");
+{
+  const courseData = getCourse("st-sofia");
+  const p: SharedPlayer[] = [
+    { id: 6001, gameId: 1, name: "Foozler", handicap: 0, rosterId: null },
+    { id: 6002, gameId: 1, name: "Other", handicap: 0, rosterId: null },
+  ];
+  // Create scores where Foozler gets gross bogey on par 3 hole 4 (index 3)
+  const s: SharedScore[] = [];
+  for (const pl of p) {
+    for (let h = 1; h <= 18; h++) {
+      const par = courseData.holePars[h - 1];
+      s.push({ id: 60000 + pl.id * 100 + h, gameId: 1, playerId: pl.id, hole: h, grossScore: h === 4 && pl.id === 6001 ? par + 1 : par, longestDrive: null, closestPin: null });
+    }
+  }
+  // Toggle greenie on hole 4 for Foozler (CTP but missed par)
+  const achs: SharedAchievement[] = [{
+    id: 60001, gameId: 1, playerId: 6001, hole: 4,
+    sandy: 0, chipIn: 0, greenie: 1, longestDriveWon: 0, closestPinWon: 0,
+    threePutt: 0, water: 0, ob: 0,
+    polie: 0, barkie: 0, goldenFerret: 0, arnie: 0, hogan: 0, sharkie: 0, fourPutt: 0, tigerLd: 0, mole: 0,
+  }];
+  const dots = computeActionDots(p, s, achs, DOT_CONFIG, courseData);
+  const foozler = dots.find(d => d.playerName === "Foozler")!;
+  assert(foozler.breakdown.foozles === 1, `Foozle: should have 1 foozle, got ${foozler.breakdown.foozles}`);
+  assert(foozler.breakdown.greenies === 0, `Foozle: should have 0 greenies, got ${foozler.breakdown.greenies}`);
+  console.log("  Foozle penalty - OK");
+}
+
+// Test 15: Bounce Back auto-detection
+console.log("\n--- Test 15: Bounce Back ---");
+{
+  const courseData = getCourse("pravetz");
+  const p: SharedPlayer[] = [{ id: 5001, gameId: 1, name: "Bouncer", handicap: 0, rosterId: null }];
+  const s: SharedScore[] = [];
+  for (let h = 1; h <= 18; h++) {
+    const par = courseData.holePars[h - 1];
+    // Hole 5: double bogey (+2), Hole 6: par (0) → should trigger bounce back
+    const gross = h === 5 ? par + 2 : par;
+    s.push({ id: 50000 + h, gameId: 1, playerId: 5001, hole: h, grossScore: gross, longestDrive: null, closestPin: null });
+  }
+  const dots = computeActionDots(p, s, [], DOT_CONFIG, courseData);
+  const bouncer = dots[0];
+  assert(bouncer.breakdown.bounceBacks === 1, `BounceBack: should have 1, got ${bouncer.breakdown.bounceBacks}`);
+  assert(bouncer.breakdown.doubleBogeys === 1, `BounceBack: should have 1 double bogey, got ${bouncer.breakdown.doubleBogeys}`);
+  console.log("  Bounce Back - OK");
+}
+
+// Test 16: Snowman + Hole-in-One auto-detection
+console.log("\n--- Test 16: Snowman + Hole-in-One ---");
+{
+  const courseData = getCourse("st-sofia");
+  const p: SharedPlayer[] = [{ id: 4001, gameId: 1, name: "Wild", handicap: 0, rosterId: null }];
+  const s: SharedScore[] = [];
+  for (let h = 1; h <= 18; h++) {
+    const par = courseData.holePars[h - 1];
+    let gross = par;
+    if (h === 4) gross = 1;  // Hole-in-one on par 3 (hole 4)
+    if (h === 9) gross = 9;  // Snowman on hole 9
+    s.push({ id: 40000 + h, gameId: 1, playerId: 4001, hole: h, grossScore: gross, longestDrive: null, closestPin: null });
+  }
+  const dots = computeActionDots(p, s, [], DOT_CONFIG, courseData);
+  const wild = dots[0];
+  assert(wild.breakdown.holesInOne === 1, `HIO: should have 1, got ${wild.breakdown.holesInOne}`);
+  assert(wild.breakdown.snowmen === 1, `Snowman: should have 1, got ${wild.breakdown.snowmen}`);
+  console.log("  Snowman + Hole-in-One - OK");
+}
+
+// Test 17: New manual achievements counted
+console.log("\n--- Test 17: New achievement categories ---");
+{
+  const courseData = getCourse("thracian-cliffs");
+  const p: SharedPlayer[] = [{ id: 3001, gameId: 1, name: "AchPro", handicap: 10, rosterId: null }];
+  const s: SharedScore[] = [];
+  for (let h = 1; h <= 18; h++) {
+    s.push({ id: 30000 + h, gameId: 1, playerId: 3001, hole: h, grossScore: courseData.holePars[h-1], longestDrive: null, closestPin: null });
+  }
+  const achs: SharedAchievement[] = [{
+    id: 30001, gameId: 1, playerId: 3001, hole: 1,
+    sandy: 0, chipIn: 0, greenie: 0, longestDriveWon: 0, closestPinWon: 0,
+    threePutt: 0, water: 0, ob: 0,
+    polie: 1, barkie: 1, goldenFerret: 1, arnie: 1, hogan: 1, sharkie: 1, fourPutt: 0, tigerLd: 0, mole: 1,
+  }];
+  const dots = computeActionDots(p, s, achs, DOT_CONFIG, courseData);
+  const pro = dots[0];
+  assert(pro.breakdown.polies === 1, `New ach: polies should be 1`);
+  assert(pro.breakdown.barkies === 1, `New ach: barkies should be 1`);
+  assert(pro.breakdown.goldenFerrets === 1, `New ach: goldenFerrets should be 1`);
+  assert(pro.breakdown.arnies === 1, `New ach: arnies should be 1`);
+  assert(pro.breakdown.hogans === 1, `New ach: hogans should be 1`);
+  assert(pro.breakdown.sharkies === 1, `New ach: sharkies should be 1`);
+  assert(pro.breakdown.moles === 1, `New ach: moles should be 1`);
+  // Total for hole 1: polie(1) + barkie(1) + goldenFerret(2) + arnie(1) + hogan(1) + sharkie(1) + mole(-1) = 6
+  const hole1 = pro.holeDots.find(h => h.hole === 1)!;
+  assert(hole1.manual === 6, `New ach: hole 1 manual dots should be 6, got ${hole1.manual}`);
+  console.log("  New achievement categories - OK");
+}
+
+// Test 18: Carryover with winners
+console.log("\n--- Test 18: Carryover with winners ---");
+{
+  const courseData = getCourse("st-sofia");
+  // par3Holes for st-sofia: [4, 6, 12, 15] (1-indexed)
+  const p: SharedPlayer[] = [
+    { id: 2001, gameId: 1, name: "Winner", handicap: 0, rosterId: null },
+    { id: 2002, gameId: 1, name: "Loser", handicap: 0, rosterId: null },
+  ];
+  const s: SharedScore[] = [];
+  for (const pl of p) {
+    for (let h = 1; h <= 18; h++) {
+      s.push({ id: 20000 + pl.id * 100 + h, gameId: 1, playerId: pl.id, hole: h, grossScore: courseData.holePars[h-1], longestDrive: null, closestPin: null });
+    }
+  }
+  // Nobody wins greenie on holes 4 and 6 (carry=2), Winner wins greenie on hole 12 (should get 3x)
+  const achs: SharedAchievement[] = [{
+    id: 20001, gameId: 1, playerId: 2001, hole: 12,
+    sandy: 0, chipIn: 0, greenie: 1, longestDriveWon: 0, closestPinWon: 0,
+    threePutt: 0, water: 0, ob: 0,
+    polie: 0, barkie: 0, goldenFerret: 0, arnie: 0, hogan: 0, sharkie: 0, fourPutt: 0, tigerLd: 0, mole: 0,
+  }];
+  const carryConfig = { ...DOT_CONFIG, carryoverEnabled: 1 };
+  const dots = computeActionDots(p, s, achs, carryConfig, courseData);
+  const winner = dots.find(d => d.playerName === "Winner")!;
+  // Hole 12 (index 11) greenie with 2 carry = 3x multiplier → 3 * dotGreenie(1) = 3
+  const hole12 = winner.holeDots.find(h => h.hole === 12)!;
+  assert(hole12.manual === 3, `Carryover winner: hole 12 should get 3 dots (3x greenie), got ${hole12.manual}`);
+  console.log("  Carryover with winners - OK");
+}
+
 // Summary
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) process.exit(1);
-console.log("All settlement math verified: every sum is zero.\nAll 3 game modes verified across all 6 courses with 2-50 players.");
+console.log("All settlement math verified: every sum is zero.\nAll 3 game modes + 13 new categories verified across all 6 courses with 2-50 players.");

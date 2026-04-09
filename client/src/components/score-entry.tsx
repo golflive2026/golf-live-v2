@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,7 +23,7 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
   const [currentHole, setCurrentHole] = useState(1);
   const [saving, setSaving] = useState(false);
 
-  const scoresMap = buildScoresMap(scores);
+  const scoresMap = useMemo(() => buildScoresMap(scores), [scores]);
   const player = players.find(p => p.id === selectedPlayerId);
   const playerScores = player ? scoresMap.get(player.id) : undefined;
   const currentScore = playerScores?.get(currentHole);
@@ -201,51 +201,129 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             </div>
           </div>
 
-          {isLongestDrive && (
-            <div className="border-t border-border pt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Ruler className="w-4 h-4 text-primary" />
-                <span className="text-sm font-medium">Longest Drive (meters)</span>
+          {isLongestDrive && (() => {
+            const isSimpleMode = !game.ldCtpMode || game.ldCtpMode === "simple";
+            if (isSimpleMode) {
+              const ldWinner = scores.find(s => s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
+              return (
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Ruler className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">Longest Drive — Who Won?</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {players.map(p => {
+                      const isWinner = ldWinner?.playerId === p.id;
+                      return (
+                        <button key={p.id}
+                          onClick={async () => {
+                            // Clear previous winner
+                            for (const pl of players) {
+                              const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                              if (ps?.longestDrive && ps.longestDrive >= 999) {
+                                await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
+                              }
+                            }
+                            // Set new winner
+                            await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: 999 });
+                            queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                          }}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                            isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}>
+                          {p.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="border-t border-border pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Ruler className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium">Longest Drive (meters)</span>
+                </div>
+                <Input
+                  data-testid="input-longest-drive"
+                  type="number"
+                  placeholder="Distance in meters"
+                  defaultValue={longestDrive ?? ""}
+                  key={`ld-${selectedPlayerId}-${currentHole}`}
+                  onBlur={e => {
+                    const val = e.target.value ? parseFloat(e.target.value) : null;
+                    saveScore({ longestDrive: val });
+                  }}
+                  className="h-12 text-lg"
+                  min={0}
+                  step={1}
+                />
               </div>
-              <Input
-                data-testid="input-longest-drive"
-                type="number"
-                placeholder="Distance in meters"
-                defaultValue={longestDrive ?? ""}
-                key={`ld-${selectedPlayerId}-${currentHole}`}
-                onBlur={e => {
-                  const val = e.target.value ? parseFloat(e.target.value) : null;
-                  saveScore({ longestDrive: val });
-                }}
-                className="h-12 text-lg"
-                min={0}
-                step={1}
-              />
-            </div>
-          )}
+            );
+          })()}
 
-          {isClosestPin && (
-            <div className="border-t border-border pt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-4 h-4 text-accent-foreground" />
-                <span className="text-sm font-medium">Closest to Pin (cm)</span>
+          {isClosestPin && (() => {
+            const isSimpleMode = !game.ldCtpMode || game.ldCtpMode === "simple";
+            if (isSimpleMode) {
+              const ctpWinner = scores.find(s => s.hole === currentHole && s.closestPin && s.closestPin >= 999);
+              return (
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-4 h-4 text-accent-foreground" />
+                    <span className="text-sm font-medium">Closest to Pin — Who Won?</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {players.map(p => {
+                      const isWinner = ctpWinner?.playerId === p.id;
+                      return (
+                        <button key={p.id}
+                          onClick={async () => {
+                            // Clear previous winner
+                            for (const pl of players) {
+                              const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
+                              if (ps?.closestPin && ps.closestPin >= 999) {
+                                await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
+                              }
+                            }
+                            // Set new winner
+                            await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, closestPin: 999 });
+                            queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                          }}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                            isWinner ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}>
+                          {p.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="border-t border-border pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="w-4 h-4 text-accent-foreground" />
+                  <span className="text-sm font-medium">Closest to Pin (cm)</span>
+                </div>
+                <Input
+                  data-testid="input-closest-pin"
+                  type="number"
+                  placeholder="Distance in cm"
+                  defaultValue={closestPin ?? ""}
+                  key={`cp-${selectedPlayerId}-${currentHole}`}
+                  onBlur={e => {
+                    const val = e.target.value ? parseFloat(e.target.value) : null;
+                    saveScore({ closestPin: val });
+                  }}
+                  className="h-12 text-lg"
+                  min={0}
+                  step={1}
+                />
               </div>
-              <Input
-                data-testid="input-closest-pin"
-                type="number"
-                placeholder="Distance in cm"
-                defaultValue={closestPin ?? ""}
-                key={`cp-${selectedPlayerId}-${currentHole}`}
-                onBlur={e => {
-                  const val = e.target.value ? parseFloat(e.target.value) : null;
-                  saveScore({ closestPin: val });
-                }}
-                className="h-12 text-lg"
-                min={0}
-                step={1}
-              />
-            </div>
-          )}
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -259,14 +337,37 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
               <div className="flex flex-wrap gap-1.5">
                 {(() => {
                   const net = getNetScoreForHole(grossScore, player.handicap, currentHole - 1, course);
+                  const currentAchBadge = achievements?.find(a => a.playerId === player.id && a.hole === currentHole);
                   if (net === null) return null;
                   const diff = net - par;
+
+                  // Bounce Back: previous hole NET was double bogey+ and current NET is par or better
+                  const prevHole = currentHole - 1;
+                  let isBounceBack = false;
+                  if (prevHole >= 1) {
+                    const prevScore = playerScores?.get(prevHole);
+                    if (prevScore?.grossScore) {
+                      const prevNet = getNetScoreForHole(prevScore.grossScore, player.handicap, prevHole - 1, course);
+                      const prevPar = course.holePars[prevHole - 1];
+                      if (prevNet !== null && (prevNet - prevPar) >= 2 && diff <= 0) {
+                        isBounceBack = true;
+                      }
+                    }
+                  }
+
+                  // Foozle: greenie/CTP toggled but NET > par
+                  const isFoozle = (currentAchBadge?.greenie || currentAchBadge?.closestPinWon) && diff > 0;
+
                   return (
                     <>
                       {diff <= -3 && <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-bold">Albatross!</span>}
                       {diff === -2 && <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-bold">Eagle</span>}
                       {diff === -1 && <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">Birdie</span>}
                       {diff >= 2 && <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-bold">Double+</span>}
+                      {grossScore === 1 && <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs font-bold">Hole-in-One!</span>}
+                      {grossScore >= 8 && <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-800 text-xs font-bold">Snowman</span>}
+                      {isBounceBack && <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-bold">Bounce Back</span>}
+                      {isFoozle && <span className="px-2 py-0.5 rounded-full bg-red-200 text-red-900 text-xs font-bold">Foozle</span>}
                     </>
                   );
                 })()}
@@ -274,41 +375,71 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             )}
 
             {/* Manual achievement toggles */}
-            <div className="grid grid-cols-2 gap-2">
-              {(() => {
-                const currentAch = achievements?.find(a => a.playerId === player.id && a.hole === currentHole);
-                const saveAchievement = async (data: Record<string, number>) => {
-                  if (!player) return;
-                  await apiRequest("POST", "/api/achievements", {
-                    gameId: game.id, playerId: player.id, hole: currentHole, ...data,
-                  });
-                  queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
-                };
-                const toggles = [
-                  { key: "sandy", label: "Sandy", icon: "⛱️", always: true },
-                  { key: "chipIn", label: "Chip-in", icon: "🎯", always: true },
-                  { key: "threePutt", label: "3-putt", icon: "😬", always: true },
-                  { key: "water", label: "Water", icon: "💧", always: true },
-                  { key: "ob", label: "OB", icon: "🚫", always: true },
-                  { key: "greenie", label: "Greenie", icon: "🟢", always: false, show: course.par3Holes.includes(currentHole) },
-                  { key: "longestDriveWon", label: "LD Won", icon: "💪", always: false, show: course.longestDriveHoles.includes(currentHole) },
-                  { key: "closestPinWon", label: "CTP Won", icon: "📍", always: false, show: course.par3Holes.includes(currentHole) },
-                ];
-                return toggles
-                  .filter(t => t.always || t.show)
-                  .map(t => (
-                    <button
-                      key={t.key}
-                      onClick={() => saveAchievement({ [t.key]: (currentAch as any)?.[t.key] ? 0 : 1 })}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        (currentAch as any)?.[t.key] ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {t.icon} {t.label}
-                    </button>
-                  ));
-              })()}
-            </div>
+            {(() => {
+              const currentAch = achievements?.find(a => a.playerId === player.id && a.hole === currentHole);
+              const saveAchievement = async (data: Record<string, number>) => {
+                if (!player) return;
+                await apiRequest("POST", "/api/achievements", {
+                  gameId: game.id, playerId: player.id, hole: currentHole, ...data,
+                });
+                queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+              };
+
+              const isPar3 = course.par3Holes.includes(currentHole);
+              const isLdHole = course.longestDriveHoles.includes(currentHole);
+              const isPar5 = par === 5;
+
+              const allToggles: Array<{ key: string; label: string; emoji: string; show: boolean; spacer?: boolean }> = [
+                // Row 1: Always visible
+                { key: "polie", label: "Polie", emoji: "\u26f3", show: true },
+                { key: "sandy", label: "Sandy", emoji: "\u26f1\ufe0f", show: true },
+                { key: "chipIn", label: "Chip-in", emoji: "\ud83c\udfaf", show: true },
+                { key: "goldenFerret", label: "Ferret", emoji: "\ud83c\udfc6", show: true },
+                // Row 2: Always visible
+                { key: "barkie", label: "Barkie", emoji: "\ud83c\udf32", show: true },
+                { key: "sharkie", label: "Sharkie", emoji: "\ud83e\udd88", show: true },
+                { key: "arnie", label: "Arnie", emoji: "\ud83c\udfa9", show: true },
+                { key: "hogan", label: "Hogan", emoji: "\ud83c\udfaf", show: true },
+                // Row 3: Always visible
+                { key: "threePutt", label: "3-putt", emoji: "\u21a9\ufe0f", show: true },
+                { key: "fourPutt", label: "4-putt", emoji: "\ud83d\udc80", show: true },
+                { key: "mole", label: "Mole", emoji: "\ud83d\udd73\ufe0f", show: true },
+                { key: "_spacer1", label: "", emoji: "", show: true, spacer: true },
+                // Row 4: Conditional
+                { key: "greenie", label: "Greenie", emoji: "\ud83d\udfe2", show: isPar3 },
+                { key: "closestPinWon", label: "CTP", emoji: "\ud83d\udccd", show: isPar3 },
+                { key: "longestDriveWon", label: "LD", emoji: "\ud83d\udcaa", show: isLdHole },
+                { key: "tigerLd", label: "Tiger", emoji: "\ud83d\udc2f", show: isPar5 },
+                // Row 5: Always visible
+                { key: "water", label: "Water", emoji: "\ud83d\udca7", show: true },
+                { key: "ob", label: "OB", emoji: "\u26a0\ufe0f", show: true },
+              ];
+
+              const visibleToggles = allToggles.filter(t => t.show);
+
+              return (
+                <div className="grid grid-cols-4 gap-1.5">
+                  {visibleToggles.map(t =>
+                    t.spacer ? (
+                      <div key={t.key} />
+                    ) : (
+                      <button
+                        key={t.key}
+                        onClick={() => saveAchievement({ [t.key]: (currentAch as any)?.[t.key] ? 0 : 1 })}
+                        className={`flex flex-col items-center justify-center min-h-[44px] rounded-lg transition-all ${
+                          (currentAch as any)?.[t.key]
+                            ? "bg-primary/20 text-primary ring-1 ring-primary"
+                            : "bg-muted/50 text-muted-foreground"
+                        }`}
+                      >
+                        <span className="text-lg">{t.emoji}</span>
+                        <span className="text-[9px] leading-tight">{t.label}</span>
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       )}

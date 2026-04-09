@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { type CourseData, type Player, type Score, type Game, type Achievement } from "@shared/schema";
@@ -13,9 +13,17 @@ interface Props {
   achievements?: Achievement[];
 }
 
-function PlayerDetail({ entry, course }: { entry: LeaderboardEntry; course: CourseData }) {
+function PlayerDetail({ entry, course, stablefordPoints }: { entry: LeaderboardEntry; course: CourseData; stablefordPoints?: (number | null)[] }) {
   const front9 = course.holePars.slice(0, 9);
   const back9 = course.holePars.slice(9, 18);
+
+  function ptsClass(pts: number | null): string {
+    if (pts === null) return "";
+    if (pts === 0) return "text-red-500 bg-red-50 dark:bg-red-900/20";
+    if (pts === 1) return "text-orange-500";
+    if (pts === 2) return "text-muted-foreground";
+    return "text-green-600 bg-green-50 dark:bg-green-900/20"; // 3+
+  }
 
   return (
     <div className="mt-3 space-y-2">
@@ -35,6 +43,14 @@ function PlayerDetail({ entry, course }: { entry: LeaderboardEntry; course: Cour
             </div>
           );
         })}
+        {stablefordPoints && front9.map((_, i) => {
+          const pts = stablefordPoints[i];
+          return (
+            <div key={i} className={`text-center text-[10px] font-bold rounded py-0.5 ${ptsClass(pts)}`}>
+              {pts != null ? `${pts}pt` : "-"}
+            </div>
+          );
+        })}
       </div>
 
       <div className="text-xs font-medium text-muted-foreground mb-1 mt-2">Back 9 (Par {course.backNinePar})</div>
@@ -51,6 +67,15 @@ function PlayerDetail({ entry, course }: { entry: LeaderboardEntry; course: Cour
           return (
             <div key={i} className={`text-center text-xs font-bold rounded py-0.5 ${gross != null ? getScoreColorClass(gross, idx, course) : ""} ${gross != null ? getScoreBgClass(gross, idx, course) : ""}`}>
               {gross ?? "-"}
+            </div>
+          );
+        })}
+        {stablefordPoints && back9.map((_, i) => {
+          const idx = i + 9;
+          const pts = stablefordPoints[idx];
+          return (
+            <div key={i} className={`text-center text-[10px] font-bold rounded py-0.5 ${ptsClass(pts)}`}>
+              {pts != null ? `${pts}pt` : "-"}
             </div>
           );
         })}
@@ -178,9 +203,10 @@ export default function Leaderboard({ players, scores, course, game, achievement
   const isStableford = game.gameMode === "stableford";
   const isAction = game.gameMode === "action";
 
-  const entries: (LeaderboardEntry | StablefordEntry)[] = isStableford
-    ? computeStablefordLeaderboard(players, scores, course)
-    : computeLeaderboard(players, scores, course);
+  const entries = useMemo(() =>
+    isStableford ? computeStablefordLeaderboard(players, scores, course) : computeLeaderboard(players, scores, course),
+    [players, scores, course, isStableford]
+  ) as (LeaderboardEntry | StablefordEntry)[];
 
   if (players.length === 0) {
     return <div className="text-center py-12 text-muted-foreground">No players yet</div>;
@@ -314,7 +340,7 @@ export default function Leaderboard({ players, scores, course, game, achievement
                       </>
                     )}
                   </div>
-                  <PlayerDetail entry={entry} course={course} />
+                  <PlayerDetail entry={entry} course={course} stablefordPoints={stablefordEntry?.holeStablefordPoints} />
                 </div>
               )}
             </CardContent>

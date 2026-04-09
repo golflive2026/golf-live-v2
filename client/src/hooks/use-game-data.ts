@@ -17,7 +17,7 @@ export function useGameData(gameId: number) {
       const res = await apiRequest("GET", `/api/games/${gameId}/full`);
       return res.json();
     },
-    refetchInterval: 4000, // Poll every 4 seconds
-    staleTime: 2000,
+    refetchInterval: 5000, // Poll every 5 seconds
+    staleTime: 3000,
   });
 }

@@ -39,6 +39,8 @@ export default function Setup() {
   const [bets, setBets] = useState({ ...DEFAULT_BETS });
   const [gameMode, setGameMode] = useState<"stroke" | "stableford" | "action">("stroke");
   const [dots, setDots] = useState<Record<string, number>>({ ...DEFAULT_DOTS });
+  const [ldCtpMode, setLdCtpMode] = useState("simple");
+  const [carryoverEnabled, setCarryoverEnabled] = useState(false);
   const [creating, setCreating] = useState(false);
   const [editingHcpIdx, setEditingHcpIdx] = useState<number | null>(null);
   const [editHcpValue, setEditHcpValue] = useState("");
@@ -118,7 +120,11 @@ export default function Setup() {
         eaglePot: bets.eaglePot,
         longestDriveBet: bets.longestDriveBet,
         closestPinBet: bets.closestPinBet,
-        ...(gameMode === "action" ? dots : {}),
+        ...(gameMode === "action" ? {
+          ...dots,
+          ldCtpMode,
+          carryoverEnabled: carryoverEnabled ? 1 : 0,
+        } : {}),
       });
       const game = await gameRes.json();
 
@@ -238,7 +244,7 @@ export default function Setup() {
                 <div className="grid grid-cols-3 gap-2 mb-4">
                   {([
                     { mode: "stroke" as const, icon: "🏌️", label: "Stroke", desc: "Classic net scoring" },
-                    { mode: "stableford" as const, icon: "⭐", label: "Stableford", desc: "Points per hole" },
+                    { mode: "stableford" as const, icon: "⭐", label: "Stableford", desc: "Points per hole · Highest wins" },
                     { mode: "action" as const, icon: "🎯", label: "Action", desc: "Dots & side bets" },
                   ]).map(m => (
                     <button key={m.mode} onClick={() => setGameMode(m.mode)}
@@ -276,7 +282,7 @@ export default function Setup() {
                   <div className="grid grid-cols-3 gap-2 mb-4">
                     {([
                       { mode: "stroke" as const, icon: "🏌️", label: "Stroke", desc: "Classic net scoring" },
-                      { mode: "stableford" as const, icon: "⭐", label: "Stableford", desc: "Points per hole" },
+                      { mode: "stableford" as const, icon: "⭐", label: "Stableford", desc: "Points per hole · Highest wins" },
                       { mode: "action" as const, icon: "🎯", label: "Action", desc: "Dots & side bets" },
                     ]).map(m => (
                       <button key={m.mode} onClick={() => setGameMode(m.mode)}
@@ -415,34 +421,91 @@ export default function Setup() {
                     <Label className="text-sm font-bold">Point Value (€ per dot)</Label>
                     <Input type="number" value={dots.dotValue} onChange={e => setDots({...dots, dotValue: parseFloat(e.target.value) || 1})} className="h-10 w-24 text-center" min={0.5} step={0.5} />
                   </div>
-                  <div className="text-xs text-muted-foreground font-medium mt-3 mb-1">Earn Points For</div>
-                  {[
-                    { key: "dotBirdie", label: "Birdie (net)" },
-                    { key: "dotEagle", label: "Eagle (net)" },
-                    { key: "dotAlbatross", label: "Albatross (net)" },
-                    { key: "dotSandy", label: "Sandy (par from bunker)" },
-                    { key: "dotChipIn", label: "Chip-in" },
-                    { key: "dotGreenie", label: "Greenie (CTP + par)" },
-                    { key: "dotLongestDrive", label: "Longest Drive" },
-                    { key: "dotClosestPin", label: "Closest to Pin" },
-                  ].map(f => (
-                    <div key={f.key} className="flex items-center justify-between">
-                      <Label className="text-sm">{f.label}</Label>
-                      <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">LD/CTP Mode</Label>
+                    <Select value={ldCtpMode} onValueChange={setLdCtpMode}>
+                      <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="simple">Quick (winner only)</SelectItem>
+                        <SelectItem value="distance">Detailed (distances)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Carryover (ties roll forward)</Label>
+                    <button
+                      onClick={() => setCarryoverEnabled(!carryoverEnabled)}
+                      className={`w-11 h-6 rounded-full transition-colors relative ${carryoverEnabled ? "bg-primary" : "bg-muted"}`}
+                    >
+                      <span className={`block w-5 h-5 rounded-full bg-white shadow absolute top-0.5 transition-transform ${carryoverEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                    </button>
+                  </div>
+
+                  <details open>
+                    <summary className="text-xs text-muted-foreground font-medium cursor-pointer">Score Bonuses (tap to collapse)</summary>
+                    <div className="space-y-3 mt-2">
+                      {[
+                        { key: "dotBirdie", label: "Birdie (net)" },
+                        { key: "dotEagle", label: "Eagle (net)" },
+                        { key: "dotAlbatross", label: "Albatross (net)" },
+                        { key: "dotBounceBack", label: "Bounce Back" },
+                        { key: "dotHoleInOne", label: "Hole in One" },
+                      ].map(f => (
+                        <div key={f.key} className="flex items-center justify-between">
+                          <Label className="text-sm">{f.label}</Label>
+                          <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                  <div className="text-xs text-muted-foreground font-medium mt-3 mb-1">Lose Points For</div>
-                  {[
-                    { key: "dotDoubleBogey", label: "Double Bogey+ (net)" },
-                    { key: "dotThreePutt", label: "3-Putt" },
-                    { key: "dotWater", label: "Water Penalty" },
-                    { key: "dotOb", label: "Out of Bounds" },
-                  ].map(f => (
-                    <div key={f.key} className="flex items-center justify-between">
-                      <Label className="text-sm">{f.label}</Label>
-                      <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+                  </details>
+
+                  <details>
+                    <summary className="text-xs text-muted-foreground font-medium cursor-pointer">Recovery & Skill (tap to expand)</summary>
+                    <div className="space-y-3 mt-2">
+                      {[
+                        { key: "dotSandy", label: "Sandy (par from bunker)" },
+                        { key: "dotChipIn", label: "Chip-in" },
+                        { key: "dotGoldenFerret", label: "Golden Ferret (chip-in from bunker)" },
+                        { key: "dotBarkie", label: "Barkie (par after hitting tree)" },
+                        { key: "dotSharkie", label: "Sharkie (par from water)" },
+                        { key: "dotArnie", label: "Arnie (par without fairway)" },
+                        { key: "dotHogan", label: "Hogan (GIR + par or better)" },
+                        { key: "dotPolie", label: "Polie (par with 1 putt)" },
+                        { key: "dotGreenie", label: "Greenie (CTP + par)" },
+                        { key: "dotLongestDrive", label: "Longest Drive" },
+                        { key: "dotClosestPin", label: "Closest to Pin" },
+                        { key: "dotTigerLd", label: "Tiger LD (LD + birdie)" },
+                      ].map(f => (
+                        <div key={f.key} className="flex items-center justify-between">
+                          <Label className="text-sm">{f.label}</Label>
+                          <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </details>
+
+                  <details>
+                    <summary className="text-xs text-muted-foreground font-medium cursor-pointer">Penalties (tap to expand)</summary>
+                    <div className="space-y-3 mt-2">
+                      {[
+                        { key: "dotDoubleBogey", label: "Double Bogey+ (net)" },
+                        { key: "dotThreePutt", label: "3-Putt" },
+                        { key: "dotFourPutt", label: "4-Putt" },
+                        { key: "dotWater", label: "Water Penalty" },
+                        { key: "dotOb", label: "Out of Bounds" },
+                        { key: "dotMole", label: "Mole (3-putt from < 3ft)" },
+                        { key: "dotFoozle", label: "Foozle (whiff/duff)" },
+                        { key: "dotSnowman", label: "Snowman (8+)" },
+                      ].map(f => (
+                        <div key={f.key} className="flex items-center justify-between">
+                          <Label className="text-sm">{f.label}</Label>
+                          <Input type="number" value={(dots as any)[f.key]} onChange={e => setDots({...dots, [f.key]: parseInt(e.target.value) || 0})} className="h-10 w-20 text-center" />
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               ) : (
                 betFields.map(f => (

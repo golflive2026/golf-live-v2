@@ -211,8 +211,8 @@ export default function GamePage() {
                 }`}
                 onClick={() => setTab(t.key)}
               >
-                <Icon className={`w-5 h-5 mb-0.5 ${active ? "stroke-[2.5]" : ""}`} />
-                <span className="text-[10px] font-medium">{t.label}</span>
+                <Icon className={`w-4 h-4 mb-0.5 ${active ? "stroke-[2.5]" : ""}`} />
+                <span className="text-[9px] font-medium">{t.label}</span>
               </button>
             );
           })}

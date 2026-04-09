@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type CourseData, type Game, type Player, type Score, type Achievement, DEFAULT_DOTS } from "@shared/schema";
@@ -39,21 +39,10 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
 
   // Action/Dots mode — completely different view
   if (game.gameMode === "action") {
-    const dotConfig: DotConfig = {
-      dotBirdie: game.dotBirdie ?? DEFAULT_DOTS.dotBirdie,
-      dotEagle: game.dotEagle ?? DEFAULT_DOTS.dotEagle,
-      dotAlbatross: game.dotAlbatross ?? DEFAULT_DOTS.dotAlbatross,
-      dotDoubleBogey: game.dotDoubleBogey ?? DEFAULT_DOTS.dotDoubleBogey,
-      dotSandy: game.dotSandy ?? DEFAULT_DOTS.dotSandy,
-      dotChipIn: game.dotChipIn ?? DEFAULT_DOTS.dotChipIn,
-      dotGreenie: game.dotGreenie ?? DEFAULT_DOTS.dotGreenie,
-      dotLongestDrive: game.dotLongestDrive ?? DEFAULT_DOTS.dotLongestDrive,
-      dotClosestPin: game.dotClosestPin ?? DEFAULT_DOTS.dotClosestPin,
-      dotThreePutt: game.dotThreePutt ?? DEFAULT_DOTS.dotThreePutt,
-      dotWater: game.dotWater ?? DEFAULT_DOTS.dotWater,
-      dotOb: game.dotOb ?? DEFAULT_DOTS.dotOb,
-    };
-    const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course);
+    const dotConfig: DotConfig = Object.fromEntries(
+      Object.keys(DEFAULT_DOTS).map(k => [k, (game as any)[k] ?? (DEFAULT_DOTS as any)[k]])
+    ) as DotConfig;
+    const dotEntries = useMemo(() => computeActionDots(players, scores, achievements ?? [], dotConfig, course), [players, scores, achievements, dotConfig, course]);
     const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
 
     return (
@@ -174,14 +163,14 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
 
   // Stroke or Stableford mode — tabbed view
   const isStableford = game.gameMode === "stableford";
-  const entries = isStableford
+  const entries = useMemo(() => isStableford
     ? computeStablefordLeaderboard(players, scores, course)
-    : computeLeaderboard(players, scores, course);
-  const matchPlay = isStableford
+    : computeLeaderboard(players, scores, course), [players, scores, course, isStableford]);
+  const matchPlay = useMemo(() => isStableford
     ? computeStablefordMatchPlay(entries as any, game.first9Bet, game.second9Bet, game.wholeGameBet)
-    : computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
-  const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
-  const special = computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet, course);
+    : computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet), [entries, isStableford, game.first9Bet, game.second9Bet, game.wholeGameBet]);
+  const birdieEagle = useMemo(() => computeBirdieEagle(entries, game.birdiePot, game.eaglePot), [entries, game.birdiePot, game.eaglePot]);
+  const special = useMemo(() => computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet, course), [scores, players, game.longestDriveBet, game.closestPinBet, course]);
 
   const driveHolesLabel = course.longestDriveHoles.join(" & ");
   const pinHolesLabel = course.par3Holes.join(", ");
@@ -230,7 +219,7 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
 
       <TabsContent value="birdies" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
-          Birdie pot: {game.birdiePot}/pair · Eagle pot: {game.eaglePot}/pair
+          Birdie pot{isStableford ? " (gross birdies)" : ""}: {game.birdiePot}/pair · Eagle pot{isStableford ? " (gross eagles)" : ""}: {game.eaglePot}/pair
         </div>
         {birdieEagle.sort((a, b) => b.total - a.total).map(r => (
           <Card key={r.playerId} className="border-border" data-testid={`card-birdie-${r.playerId}`}>

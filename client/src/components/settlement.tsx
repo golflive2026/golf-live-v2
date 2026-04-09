@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type CourseData, type Game, type Player, type Score, type Achievement, DEFAULT_DOTS } from "@shared/schema";
 import {
@@ -27,36 +28,29 @@ export default function Settlement({ game, players, scores, course, achievements
   const isAction = game.gameMode === "action";
   const isStableford = game.gameMode === "stableford";
 
-  let settlement: ReturnType<typeof computeSettlement>;
-  let entries: ReturnType<typeof computeLeaderboard>;
+  const { settlement, entries } = useMemo(() => {
+    let settlement: ReturnType<typeof computeSettlement>;
+    let entries: ReturnType<typeof computeLeaderboard>;
 
-  if (isAction) {
-    const dotConfig: DotConfig = {
-      dotBirdie: game.dotBirdie ?? DEFAULT_DOTS.dotBirdie,
-      dotEagle: game.dotEagle ?? DEFAULT_DOTS.dotEagle,
-      dotAlbatross: game.dotAlbatross ?? DEFAULT_DOTS.dotAlbatross,
-      dotDoubleBogey: game.dotDoubleBogey ?? DEFAULT_DOTS.dotDoubleBogey,
-      dotSandy: game.dotSandy ?? DEFAULT_DOTS.dotSandy,
-      dotChipIn: game.dotChipIn ?? DEFAULT_DOTS.dotChipIn,
-      dotGreenie: game.dotGreenie ?? DEFAULT_DOTS.dotGreenie,
-      dotLongestDrive: game.dotLongestDrive ?? DEFAULT_DOTS.dotLongestDrive,
-      dotClosestPin: game.dotClosestPin ?? DEFAULT_DOTS.dotClosestPin,
-      dotThreePutt: game.dotThreePutt ?? DEFAULT_DOTS.dotThreePutt,
-      dotWater: game.dotWater ?? DEFAULT_DOTS.dotWater,
-      dotOb: game.dotOb ?? DEFAULT_DOTS.dotOb,
-    };
-    const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course);
-    const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
-    settlement = computeActionSettlement(dotEntries, dotValue);
-    entries = computeLeaderboard(players, scores, course);
-  } else if (isStableford) {
-    const stablefordEntries = computeStablefordLeaderboard(players, scores, course);
-    settlement = computeStablefordSettlement(stablefordEntries, scores, players, game, course);
-    entries = stablefordEntries;
-  } else {
-    entries = computeLeaderboard(players, scores, course);
-    settlement = computeSettlement(entries, scores, players, game, course);
-  }
+    if (isAction) {
+      const dotConfig: DotConfig = Object.fromEntries(
+        Object.keys(DEFAULT_DOTS).map(k => [k, (game as any)[k] ?? (DEFAULT_DOTS as any)[k]])
+      ) as DotConfig;
+      const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course);
+      const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
+      settlement = computeActionSettlement(dotEntries, dotValue);
+      entries = computeLeaderboard(players, scores, course);
+    } else if (isStableford) {
+      const stablefordEntries = computeStablefordLeaderboard(players, scores, course);
+      settlement = computeStablefordSettlement(stablefordEntries, scores, players, game, course);
+      entries = stablefordEntries;
+    } else {
+      entries = computeLeaderboard(players, scores, course);
+      settlement = computeSettlement(entries, scores, players, game, course);
+    }
+
+    return { settlement, entries };
+  }, [players, scores, course, game, achievements, isAction, isStableford]);
 
   const winners = settlement.filter(s => s.grandTotal > 0);
   const losers = settlement.filter(s => s.grandTotal < 0);

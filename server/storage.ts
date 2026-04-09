@@ -66,6 +66,32 @@ async function initDatabase(): Promise<void> {
     "ALTER TABLE games ADD COLUMN dot_three_putt INTEGER DEFAULT -1",
     "ALTER TABLE games ADD COLUMN dot_water INTEGER DEFAULT -1",
     "ALTER TABLE games ADD COLUMN dot_ob INTEGER DEFAULT -1",
+    // New dot categories
+    "ALTER TABLE games ADD COLUMN dot_polie INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_barkie INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_golden_ferret INTEGER DEFAULT 2",
+    "ALTER TABLE games ADD COLUMN dot_arnie INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_hogan INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_sharkie INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_four_putt INTEGER DEFAULT -2",
+    "ALTER TABLE games ADD COLUMN dot_tiger_ld INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_mole INTEGER DEFAULT -1",
+    "ALTER TABLE games ADD COLUMN dot_foozle INTEGER DEFAULT -1",
+    "ALTER TABLE games ADD COLUMN dot_bounce_back INTEGER DEFAULT 1",
+    "ALTER TABLE games ADD COLUMN dot_snowman INTEGER DEFAULT -2",
+    "ALTER TABLE games ADD COLUMN dot_hole_in_one INTEGER DEFAULT 5",
+    "ALTER TABLE games ADD COLUMN carryover_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE games ADD COLUMN ld_ctp_mode TEXT NOT NULL DEFAULT 'simple'",
+    // New achievement columns
+    "ALTER TABLE achievements ADD COLUMN polie INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN barkie INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN golden_ferret INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN arnie INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN hogan INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN sharkie INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN four_putt INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN tiger_ld INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE achievements ADD COLUMN mole INTEGER NOT NULL DEFAULT 0",
   ];
   for (const m of migrations) {
     try { await client.execute(m); } catch {}
@@ -185,6 +211,8 @@ export class DatabaseStorage {
   async upsertAchievement(gameId: number, playerId: number, hole: number, data: Partial<{
     sandy: number; chipIn: number; greenie: number; longestDriveWon: number;
     closestPinWon: number; threePutt: number; water: number; ob: number;
+    polie: number; barkie: number; goldenFerret: number; arnie: number;
+    hogan: number; sharkie: number; fourPutt: number; tigerLd: number; mole: number;
   }>): Promise<Achievement> {
     const existing = await db.select().from(achievements)
       .where(and(eq(achievements.gameId, gameId), eq(achievements.playerId, playerId), eq(achievements.hole, hole)))
@@ -201,6 +229,9 @@ export class DatabaseStorage {
       sandy: data.sandy ?? 0, chipIn: data.chipIn ?? 0, greenie: data.greenie ?? 0,
       longestDriveWon: data.longestDriveWon ?? 0, closestPinWon: data.closestPinWon ?? 0,
       threePutt: data.threePutt ?? 0, water: data.water ?? 0, ob: data.ob ?? 0,
+      polie: data.polie ?? 0, barkie: data.barkie ?? 0, goldenFerret: data.goldenFerret ?? 0,
+      arnie: data.arnie ?? 0, hogan: data.hogan ?? 0, sharkie: data.sharkie ?? 0,
+      fourPutt: data.fourPutt ?? 0, tigerLd: data.tigerLd ?? 0, mole: data.mole ?? 0,
     }).returning())[0];
   }
   async getAchievementsByGame(gameId: number): Promise<Achievement[]> {
