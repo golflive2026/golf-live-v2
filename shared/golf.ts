@@ -101,24 +101,22 @@ export function computeBirdieEagle(entries: LeaderboardEntry[], birdiePot: numbe
   return results;
 }
 
-export interface SpecialBetResult { hole: number; type: "longest_drive" | "closest_pin"; winnerId: number | null; winnerName: string; winnerValue: number; payout: number; }
+export interface SpecialBetResult { hole: number; type: "longest_drive" | "closest_pin"; winnerId: number | null; winnerName: string; winnerValue: number; payout: number; flight?: number; }
 
-export function computeSpecialBets(
-  allScores: Score[], players: Player[], longestDriveBet: number, closestPinBet: number,
-  course: CourseData,
+// Internal: compute specials for a single group of players
+function computeSpecialBetsForGroup(
+  scoresMap: Map<number, Map<number, Score>>, groupPlayers: Player[],
+  longestDriveBet: number, closestPinBet: number, course: CourseData, flightNum?: number,
 ) {
-  const scoresMap = buildScoresMap(allScores);
   const playerTotals = new Map<number, number>();
-  players.forEach(p => playerTotals.set(p.id, 0));
+  groupPlayers.forEach(p => playerTotals.set(p.id, 0));
 
   function findWinner(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", findMin: boolean): SpecialBetResult {
-    // Auto-detect per hole: if any player has marker >= 999, that's a winner-button tap (all participate)
-    // Otherwise compare actual distances (only participants who entered values)
     let markerWinnerId: number | null = null, markerWinnerName = "-";
     let bestId: number | null = null, bestDist = findMin ? Infinity : 0, bestName = "-";
     const participants: number[] = [];
 
-    for (const p of players) {
+    for (const p of groupPlayers) {
       const val = scoresMap.get(p.id)?.get(hole)?.[field];
       if (val && val >= 999) { markerWinnerId = p.id; markerWinnerName = p.name; }
       if (val && val > 0 && val < 999) {
@@ -127,26 +125,56 @@ export function computeSpecialBets(
       }
     }
 
-    // Winner button used → all players participate
     if (markerWinnerId) {
-      const payout = betAmt * (players.length - 1);
+      const payout = betAmt * (groupPlayers.length - 1);
       playerTotals.set(markerWinnerId, (playerTotals.get(markerWinnerId) || 0) + payout);
-      for (const p of players) { if (p.id !== markerWinnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
-      return { hole, type, winnerId: markerWinnerId, winnerName: markerWinnerName, winnerValue: 0, payout };
+      for (const p of groupPlayers) { if (p.id !== markerWinnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
+      return { hole, type, winnerId: markerWinnerId, winnerName: markerWinnerName, winnerValue: 0, payout, flight: flightNum };
     }
 
-    // Distance mode → only participants who entered values
     const payout = bestId ? betAmt * (participants.length - 1) : 0;
     if (bestId) {
       playerTotals.set(bestId, (playerTotals.get(bestId) || 0) + payout);
       for (const pid of participants) { if (pid !== bestId) playerTotals.set(pid, (playerTotals.get(pid) || 0) - betAmt); }
     }
-    return { hole, type, winnerId: bestId, winnerName: bestName, winnerValue: bestDist === Infinity ? 0 : bestDist, payout };
+    return { hole, type, winnerId: bestId, winnerName: bestName, winnerValue: bestDist === Infinity ? 0 : bestDist, payout, flight: flightNum };
   }
 
   const longestDrive = course.longestDriveHoles.map(h => findWinner(h, "longestDrive", longestDriveBet, "longest_drive", false));
   const closestPin = course.par3Holes.map(h => findWinner(h, "closestPin", closestPinBet, "closest_pin", true));
   return { longestDrive, closestPin, playerTotals };
+}
+
+// Public: auto-detects flights. No flights → single pool. Flights → per-flight pools.
+export function computeSpecialBets(
+  allScores: Score[], players: Player[], longestDriveBet: number, closestPinBet: number,
+  course: CourseData,
+) {
+  const scoresMap = buildScoresMap(allScores);
+  const flightSet = new Set(players.map(p => (p as any).flight || 0));
+  const flightNumbers = Array.from(flightSet);
+  const hasFlights = flightNumbers.some(f => f !== 0);
+
+  if (!hasFlights) {
+    // No flights — original single-pool behavior
+    return computeSpecialBetsForGroup(scoresMap, players, longestDriveBet, closestPinBet, course);
+  }
+
+  // Per-flight specials
+  const playerTotals = new Map<number, number>();
+  players.forEach(p => playerTotals.set(p.id, 0));
+  const allLd: SpecialBetResult[] = [];
+  const allCtp: SpecialBetResult[] = [];
+
+  for (const flightNum of flightNumbers) {
+    const flightPlayers = players.filter(p => ((p as any).flight || 0) === flightNum);
+    const result = computeSpecialBetsForGroup(scoresMap, flightPlayers, longestDriveBet, closestPinBet, course, flightNum);
+    result.playerTotals.forEach((v, k) => playerTotals.set(k, (playerTotals.get(k) || 0) + v));
+    allLd.push(...result.longestDrive);
+    allCtp.push(...result.closestPin);
+  }
+
+  return { longestDrive: allLd, closestPin: allCtp, playerTotals };
 }
 
 export interface SettlementEntry { playerId: number; playerName: string; matchPlay: number; birdies: number; eagles: number; specialBets: number; grandTotal: number; }

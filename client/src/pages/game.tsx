@@ -12,7 +12,8 @@ import Photos from "@/components/photos";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import ManagePlayers from "@/components/manage-players";
-import { ClipboardCopy, Flag, Trophy, DollarSign, Receipt, Share2, Users, Clock, ArrowLeft, CheckCircle2, Camera } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ClipboardCopy, Flag, Trophy, DollarSign, Receipt, Share2, Users, Clock, ArrowLeft, CheckCircle2, Camera, Pencil } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,6 +28,8 @@ export default function GamePage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [showPace, setShowPace] = useState(false);
   const [currentHole, setCurrentHole] = useState(1);
+  const [selectedFlight, setSelectedFlight] = useState<number | null>(null);
+  const [editFlightsOpen, setEditFlightsOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -60,6 +63,19 @@ export default function GamePage() {
 
   const { game, players, scores, achievements, photoCount } = data;
   const course = getCourse(game.courseId);
+
+  const flightNumbers = Array.from(new Set(players.map(p => p.flight || 0))).filter(f => f > 0).sort((a, b) => a - b);
+  const hasFlights = flightNumbers.length > 0;
+  const displayPlayers = selectedFlight ? players.filter(p => p.flight === selectedFlight) : players;
+
+  const updatePlayerFlight = async (playerId: number, flight: number) => {
+    try {
+      await apiRequest("PATCH", `/api/players/${playerId}/flight`, { flight });
+      await queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+    } catch {
+      toast({ title: "Failed to update flight", variant: "destructive" });
+    }
+  };
 
   const copyCode = async () => {
     try {
@@ -167,16 +183,99 @@ export default function GamePage() {
         </div>
       </div>
 
+      {hasFlights && (
+        <div className="sticky top-[57px] z-40 bg-background/95 backdrop-blur-sm border-b border-border">
+          <div className="max-w-lg mx-auto flex items-center gap-1.5 px-4 py-2">
+            <button
+              onClick={() => setSelectedFlight(null)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                selectedFlight === null ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              All
+            </button>
+            {flightNumbers.map(f => (
+              <button
+                key={f}
+                onClick={() => setSelectedFlight(f)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  selectedFlight === f ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                F{f}
+              </button>
+            ))}
+            {game.status === "active" && (
+              <Dialog open={editFlightsOpen} onOpenChange={setEditFlightsOpen}>
+                <DialogTrigger asChild>
+                  <button className="ml-auto px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Edit Flights</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    {(() => {
+                      const maxFlight = Math.max(...flightNumbers, 2);
+                      const allFlights = Array.from({ length: maxFlight }, (_, i) => i + 1);
+                      return (
+                        <div className="grid grid-cols-2 gap-3">
+                          {allFlights.map(flightNum => (
+                            <div key={flightNum} className="bg-muted/30 rounded-lg p-3">
+                              <p className="text-xs font-bold mb-2">Flight {flightNum}</p>
+                              {players.filter(p => (p.flight || 0) === flightNum).map(p => (
+                                <button
+                                  key={p.id}
+                                  onClick={() => {
+                                    const nextFlight = (flightNum % maxFlight) + 1;
+                                    updatePlayerFlight(p.id, nextFlight);
+                                  }}
+                                  className="bg-background rounded px-2 py-1.5 mb-1 text-xs font-medium w-full text-left hover:bg-accent transition-colors"
+                                >
+                                  {p.name}
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    {players.filter(p => !p.flight || p.flight === 0).length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Unassigned</p>
+                        <div className="flex flex-wrap gap-2">
+                          {players.filter(p => !p.flight || p.flight === 0).map(p => (
+                            <button
+                              key={p.id}
+                              onClick={() => updatePlayerFlight(p.id, 1)}
+                              className="px-3 py-2 rounded-lg bg-muted text-xs font-medium hover:bg-muted/80 transition-colors"
+                            >
+                              {p.name} — tap to assign
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
         {showPace && <PaceTimer gameId={game.id} currentHole={currentHole} gameStatus={game.status} />}
 
         {tab === "quick" && (
-          <QuickScore game={game} players={players} scores={scores} course={course} onHoleChange={setCurrentHole} />
+          <QuickScore game={game} players={displayPlayers} scores={scores} course={course} onHoleChange={setCurrentHole} />
         )}
         {tab === "score" && (
           <ScoreEntry
             game={game}
-            players={players}
+            players={displayPlayers}
             scores={scores}
             selectedPlayerId={selectedPlayerId}
             onSelectPlayer={setSelectedPlayerId}

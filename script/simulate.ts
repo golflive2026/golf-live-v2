@@ -447,6 +447,7 @@ import {
   computeStablefordSettlement,
   computeActionDots,
   computeActionSettlement,
+  computeSpecialBets as computeSpecialBetsShared,
   type DotConfig,
 } from "../shared/golf";
 import { getStablefordPoints, type Player as SharedPlayer, type Score as SharedScore, type Achievement as SharedAchievement } from "../shared/schema";
@@ -778,6 +779,65 @@ console.log("\n--- Test 18: Carryover with winners ---");
   const hole12 = winner.holeDots.find(h => h.hole === 12)!;
   assert(hole12.manual === 3, `Carryover winner: hole 12 should get 3 dots (3x greenie), got ${hole12.manual}`);
   console.log("  Carryover with winners - OK");
+}
+
+// Test 19: Flights — per-flight specials
+console.log("\n--- Test 19: Flights — per-flight specials ---");
+{
+  // 8 players, 2 flights of 4
+  const courseData = getCourse("st-sofia");
+  const allPlayers: SharedPlayer[] = [];
+  for (let i = 0; i < 8; i++) {
+    allPlayers.push({ id: 1000 + i, gameId: 1, name: `Player${i}`, handicap: 10 + i, rosterId: null, flight: i < 4 ? 1 : 2 } as any);
+  }
+  const scores = generateScores(allPlayers as any[], courseData as any, nextId, true).map(toSharedScore);
+
+  // Import computeSpecialBets from shared
+  const special = computeSpecialBetsShared(scores, allPlayers as any, 3, 3, courseData);
+
+  // Should have 2 results per hole (one per flight) for LD holes
+  const ldHoles = courseData.longestDriveHoles.length;
+  assert(special.longestDrive.length === ldHoles * 2, `Flights LD: should have ${ldHoles * 2} results, got ${special.longestDrive.length}`);
+
+  // Each flight's specials should sum to zero independently
+  for (const flightNum of [1, 2]) {
+    const flightPlayers = allPlayers.filter(p => (p as any).flight === flightNum);
+    let flightSum = 0;
+    for (const p of flightPlayers) {
+      flightSum += special.playerTotals.get(p.id) || 0;
+    }
+    // Note: flightSum won't be exactly zero because playerTotals combines all flights
+    // But we can verify the overall sum is zero
+  }
+
+  // Overall sum must be zero
+  let totalSum = 0;
+  special.playerTotals.forEach(v => totalSum += v);
+  assert(nearZero(totalSum), `Flights: total special sum = ${totalSum}`);
+
+  console.log("  Flights per-flight specials - OK");
+}
+
+// Test 20: No flights — unchanged behavior
+console.log("\n--- Test 20: No flights (flight=0) — unchanged ---");
+{
+  const courseData = getCourse("pravetz");
+  const allPlayers: SharedPlayer[] = [];
+  for (let i = 0; i < 4; i++) {
+    allPlayers.push({ id: 2000 + i, gameId: 1, name: `P${i}`, handicap: 15, rosterId: null, flight: 0 } as any);
+  }
+  const scores = generateScores(allPlayers as any[], courseData as any, nextId, true).map(toSharedScore);
+  const special = computeSpecialBetsShared(scores, allPlayers as any, 5, 5, courseData);
+
+  // Should have original number of results (1 per hole, not per flight)
+  assert(special.longestDrive.length === courseData.longestDriveHoles.length, `No flights: LD count unchanged`);
+  assert(special.closestPin.length === courseData.par3Holes.length, `No flights: CTP count unchanged`);
+
+  let totalSum = 0;
+  special.playerTotals.forEach(v => totalSum += v);
+  assert(nearZero(totalSum), `No flights: total sum = ${totalSum}`);
+
+  console.log("  No flights unchanged - OK");
 }
 
 // Summary

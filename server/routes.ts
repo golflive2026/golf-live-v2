@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage, exportAllData, importAllData, getStorageStatus } from "./storage";
-import { COURSE_LIST, getCourse } from "@shared/schema";
+import { storage, db, exportAllData, importAllData, getStorageStatus } from "./storage";
+import { COURSE_LIST, getCourse, players } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
 import { computeBadges } from "./badges";
 import { sendGameStartNotifications, sendTestEmail } from "./email";
@@ -130,7 +131,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!game) return res.status(404).json({ error: "Game not found" });
       const existingPlayers = await storage.getPlayersByGame(gameId);
       if (existingPlayers.length >= 50) return res.status(400).json({ error: "Maximum 50 players" });
-      const { name, handicap, rosterId } = req.body;
+      const { name, handicap, rosterId, flight } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       // Check for duplicate player name in this game
       if (existingPlayers.some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
@@ -142,8 +143,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const rosterEntry = await storage.upsertRoster(name.trim(), handicap ?? 0);
         if (!linkedRosterId) linkedRosterId = rosterEntry.id;
       } catch (e) {}
-      const player = await storage.createPlayer({ gameId, name: name.trim(), handicap: handicap ?? 0, rosterId: linkedRosterId });
+      const player = await storage.createPlayer({ gameId, name: name.trim(), handicap: handicap ?? 0, rosterId: linkedRosterId, flight: flight ?? 0 });
       res.json(player);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Update player flight assignment
+  app.patch("/api/players/:id/flight", async (req, res) => {
+    try {
+      const { flight } = req.body;
+      const rows = await db.update(players).set({ flight: flight ?? 0 }).where(eq(players.id, Number(req.params.id))).returning();
+      if (!rows[0]) return res.status(404).json({ error: "Player not found" });
+      res.json(rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Auto-assign flights for a game (5+ players)
+  app.post("/api/games/:id/auto-flights", async (req, res) => {
+    try {
+      const gamePlayers = await storage.getPlayersByGame(Number(req.params.id));
+      if (gamePlayers.length < 5) return res.json({ flights: 0, assignment: [] });
+      // Distribute evenly: prefer groups of 3-4
+      const n = gamePlayers.length;
+      let numFlights: number;
+      if (n <= 4) numFlights = 1;
+      else if (n <= 8) numFlights = 2;
+      else if (n <= 12) numFlights = 3;
+      else numFlights = Math.ceil(n / 4);
+      const assignment: { playerId: number; flight: number }[] = [];
+      for (let i = 0; i < gamePlayers.length; i++) {
+        const flightNum = (i % numFlights) + 1;
+        assignment.push({ playerId: gamePlayers[i].id, flight: flightNum });
+        await db.update(players).set({ flight: flightNum }).where(eq(players.id, gamePlayers[i].id));
+      }
+      res.json({ flights: numFlights, assignment });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

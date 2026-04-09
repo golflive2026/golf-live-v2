@@ -29,7 +29,8 @@ export default function Setup() {
   const isAdvanced = params?.mode === "advanced";
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [step, setStep] = useState<"info" | "players" | "bets">(isAdvanced ? "info" : "players");
+  const [step, setStep] = useState<"info" | "players" | "flights" | "bets">(isAdvanced ? "info" : "players");
+  const [playerFlights, setPlayerFlights] = useState<Record<string, number>>({});
   const [gameName, setGameName] = useState(isAdvanced ? "" : "St. Sofia Round");
   const [gameDate, setGameDate] = useState(new Date().toISOString().split("T")[0]);
   const [courseId, setCourseId] = useState("st-sofia");
@@ -134,6 +135,7 @@ export default function Setup() {
         await apiRequest("POST", `/api/games/${game.id}/players`, {
           name: p.name,
           handicap: p.handicap,
+          flight: playerFlights[p.name] || 0,
         });
         addedCount++;
       }
@@ -180,17 +182,21 @@ export default function Setup() {
         </div>
 
         <div className="flex gap-2 mb-6">
-          {(isAdvanced ? ["info", "players", "bets"] : ["players", "bets"]).map((s) => (
-            <div
-              key={s}
-              className={`h-1.5 flex-1 rounded-full transition-colors ${
-                (s === "info" && step === "info") ||
-                (s === "players" && (step === "players" || step === "bets")) ||
-                (s === "bets" && step === "bets")
-                  ? "bg-primary" : "bg-muted"
-              }`}
-            />
-          ))}
+          {(() => {
+            const showFlights = players.length >= 5;
+            const steps = isAdvanced
+              ? (showFlights ? ["info", "players", "flights", "bets"] : ["info", "players", "bets"])
+              : (showFlights ? ["players", "flights", "bets"] : ["players", "bets"]);
+            const stepOrder = steps.indexOf(step);
+            return steps.map((s, i) => (
+              <div
+                key={s}
+                className={`h-1.5 flex-1 rounded-full transition-colors ${
+                  i <= stepOrder ? "bg-primary" : "bg-muted"
+                }`}
+              />
+            ));
+          })()}
         </div>
 
         {step === "info" && isAdvanced && (
@@ -397,15 +403,112 @@ export default function Setup() {
                 <Button
                   data-testid="button-next-bets"
                   className="flex-1 h-12 font-semibold golf-gradient text-white border-0"
-                  onClick={() => setStep("bets")}
+                  onClick={() => setStep(players.length >= 5 ? "flights" : "bets")}
                   disabled={players.length < 2}
                 >
-                  Next: Set Bets
+                  {players.length >= 5 ? "Next: Assign Flights" : "Next: Set Bets"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
+
+        {step === "flights" && (() => {
+          const n = players.length;
+          const numFlights = n <= 8 ? 2 : n <= 12 ? 3 : Math.ceil(n / 4);
+          const autoSplit = () => {
+            const map: Record<string, number> = {};
+            players.forEach((p, i) => { map[p.name] = (i % numFlights) + 1; });
+            setPlayerFlights(map);
+          };
+          const allAssigned = players.every(p => playerFlights[p.name]);
+          const flightCounts = Array.from({ length: numFlights }, (_, i) =>
+            players.filter(p => playerFlights[p.name] === i + 1).length
+          );
+          const allValid = allAssigned && flightCounts.every(c => c >= 2 && c <= 4);
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Assign Flights ({numFlights} flights)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  variant="secondary"
+                  className="w-full h-10 text-sm font-semibold"
+                  onClick={autoSplit}
+                >
+                  Auto Split Players
+                </Button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {Array.from({ length: numFlights }, (_, fi) => fi + 1).map(flightNum => (
+                    <div key={flightNum} className="bg-muted/30 rounded-lg p-3">
+                      <p className="text-xs font-bold mb-2">Flight {flightNum}</p>
+                      {players.filter(p => (playerFlights[p.name] || 0) === flightNum).map(p => (
+                        <button
+                          key={p.name}
+                          onClick={() => {
+                            const nextFlight = (playerFlights[p.name] % numFlights) + 1;
+                            setPlayerFlights({ ...playerFlights, [p.name]: nextFlight });
+                          }}
+                          className="bg-background rounded px-2 py-1.5 mb-1 text-xs font-medium w-full text-left hover:bg-accent transition-colors"
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                      {(() => {
+                        const count = players.filter(p => playerFlights[p.name] === flightNum).length;
+                        if (count > 0 && (count < 2 || count > 4)) {
+                          return <p className="text-[10px] text-destructive mt-1">Need 2-4 players</p>;
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  ))}
+                </div>
+
+                {players.filter(p => !playerFlights[p.name]).length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Unassigned</p>
+                    <div className="flex flex-wrap gap-2">
+                      {players.filter(p => !playerFlights[p.name]).map(p => (
+                        <button key={p.name} onClick={() => {
+                          const counts = Array.from({ length: numFlights }, (_, i) =>
+                            players.filter(pl => playerFlights[pl.name] === i + 1).length
+                          );
+                          const minFlight = counts.indexOf(Math.min(...counts)) + 1;
+                          setPlayerFlights({ ...playerFlights, [p.name]: minFlight });
+                        }} className="px-3 py-2 rounded-lg bg-muted text-xs font-medium hover:bg-muted/80 transition-colors">
+                          {p.name} — tap to assign
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {allAssigned && !allValid && (
+                  <p className="text-xs text-destructive text-center">Each flight must have 2-4 players</p>
+                )}
+
+                <div className="flex gap-2">
+                  <Button variant="secondary" className="flex-1 h-12" onClick={() => setStep("players")}>
+                    Back
+                  </Button>
+                  <Button
+                    className="flex-1 h-12 font-semibold golf-gradient text-white border-0"
+                    onClick={() => setStep("bets")}
+                    disabled={!allValid}
+                  >
+                    Next: Set Bets
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {step === "bets" && (
           <Card>
@@ -535,7 +638,7 @@ export default function Setup() {
               </div>
 
               <div className="pt-4 flex gap-2">
-                <Button variant="secondary" className="flex-1 h-12" onClick={() => setStep("players")} data-testid="button-back-players">
+                <Button variant="secondary" className="flex-1 h-12" onClick={() => setStep(players.length >= 5 ? "flights" : "players")} data-testid="button-back-players">
                   Back
                 </Button>
                 <Button

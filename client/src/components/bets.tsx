@@ -252,12 +252,15 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
         <div className="text-xs text-muted-foreground mb-3">
           {game.longestDriveBet}/player · Holes {driveHolesLabel} · Highest distance wins
         </div>
-        {special.longestDrive.map(r => (
-          <Card key={r.hole} className="border-border" data-testid={`card-drive-${r.hole}`}>
+        {special.longestDrive.map((r, idx) => (
+          <Card key={idx} className="border-border" data-testid={`card-drive-${r.hole}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-2">
                 <Ruler className="w-4 h-4 text-primary" />
                 <span className="font-semibold text-sm">Hole {r.hole}</span>
+                {r.flight && r.flight > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">F{r.flight}</span>
+                )}
               </div>
               {r.winnerId ? (
                 <div className="flex items-center justify-between">
@@ -279,12 +282,15 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
         <div className="text-xs text-muted-foreground mb-3">
           {game.closestPinBet}/player · Par 3 holes ({pinHolesLabel}) · Shortest distance wins
         </div>
-        {special.closestPin.map(r => (
-          <Card key={r.hole} className="border-border" data-testid={`card-pin-${r.hole}`}>
+        {special.closestPin.map((r, idx) => (
+          <Card key={idx} className="border-border" data-testid={`card-pin-${r.hole}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-4 h-4 text-primary" />
                 <span className="font-semibold text-sm">Hole {r.hole}</span>
+                {r.flight && r.flight > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">F{r.flight}</span>
+                )}
               </div>
               {r.winnerId ? (
                 <div className="flex items-center justify-between">

@@ -167,6 +167,7 @@ export const players = sqliteTable("players", {
   name: text("name").notNull(),
   handicap: integer("handicap").notNull().default(0),
   rosterId: integer("roster_id"),
+  flight: integer("flight").default(0),
 });
 
 export const insertPlayerSchema = createInsertSchema(players).omit({ id: true });

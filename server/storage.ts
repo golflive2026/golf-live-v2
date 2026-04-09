@@ -53,6 +53,7 @@ async function initDatabase(): Promise<void> {
     "ALTER TABLE roster ADD COLUMN active INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE roster ADD COLUMN email TEXT DEFAULT NULL",
     "ALTER TABLE roster ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE players ADD COLUMN flight INTEGER DEFAULT 0",
     // Game modes + Action/Dots config
     "ALTER TABLE games ADD COLUMN game_mode TEXT NOT NULL DEFAULT 'stroke'",
     "ALTER TABLE games ADD COLUMN dot_value REAL DEFAULT 1",
