@@ -4,7 +4,7 @@ import { storage, exportAllData, importAllData, getStorageStatus } from "./stora
 import { COURSE_LIST, getCourse } from "@shared/schema";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
 import { computeBadges } from "./badges";
-import { sendGameStartNotifications } from "./email";
+import { sendGameStartNotifications, sendTestEmail } from "./email";
 
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -494,7 +494,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/health", async (_req, res) => {
     const status = await getStorageStatus();
-    res.json({ ...status, version: "2025-04-09-v5", deployedAt: new Date().toISOString() });
+    res.json({ ...status, version: "2025-04-09-v6", hasResendKey: !!process.env.RESEND_API_KEY });
+  });
+
+  // Test email — verify Resend config works
+  app.post("/api/test-email", async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+    const result = await sendTestEmail(email);
+    res.json(result);
   });
 
   // Debug endpoint — check LD/CTP data for a specific game+hole
