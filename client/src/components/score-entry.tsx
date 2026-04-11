@@ -221,7 +221,9 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
 
           {/* Longest Drive — winner buttons + distance per player */}
           {isLongestDrive && (() => {
-            const ldWinner = scores.find(s => s.hole === currentHole && s.longestDrive && s.longestDrive >= 999);
+            // Only find winner within the players currently displayed (flight-aware)
+            const playerIds = new Set(players.map(p => p.id));
+            const ldWinner = scores.find(s => s.hole === currentHole && s.longestDrive && s.longestDrive >= 999 && playerIds.has(s.playerId));
             const setLdWinner = async (winnerId: number) => {
               const alreadyWinner = ldWinner?.playerId === winnerId;
               try {
@@ -287,7 +289,8 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
 
           {/* Closest to Pin — winner buttons + distance per player */}
           {isClosestPin && (() => {
-            const ctpWinner = scores.find(s => s.hole === currentHole && s.closestPin && s.closestPin >= 999);
+            const ctpPlayerIds = new Set(players.map(p => p.id));
+            const ctpWinner = scores.find(s => s.hole === currentHole && s.closestPin && s.closestPin >= 999 && ctpPlayerIds.has(s.playerId));
             const setCtpWinner = async (winnerId: number) => {
               const alreadyWinner = ctpWinner?.playerId === winnerId;
               try {

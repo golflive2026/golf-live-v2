@@ -125,8 +125,8 @@ export default function Settlement({ game, players, scores, course, achievements
                 <CardContent className="p-3">
                   <p className="text-xs font-bold mb-2">Flight {flightNum}</p>
                   <div className="space-y-1.5">
+                    <p className="text-[10px] text-muted-foreground">{flightPlayers.length} players</p>
                     {flightSettlements
-                      .filter(s => s.specialBets !== 0)
                       .sort((a, b) => b.specialBets - a.specialBets)
                       .map(s => (
                       <div key={s.playerId} className="flex items-center justify-between">
@@ -135,7 +135,7 @@ export default function Settlement({ game, players, scores, course, achievements
                       </div>
                     ))}
                     {flightSettlements.every(s => s.specialBets === 0) && (
-                      <p className="text-[10px] text-muted-foreground">No specials on this flight</p>
+                      <p className="text-[10px] text-muted-foreground">No specials recorded yet</p>
                     )}
                   </div>
                 </CardContent>
