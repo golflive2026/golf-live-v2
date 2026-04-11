@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage, db, exportAllData, importAllData, getStorageStatus } from "./storage";
-import { COURSE_LIST, getCourse, players } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { COURSE_LIST, getCourse, players, scores } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
 import { computeBadges } from "./badges";
 import { sendGameStartNotifications, sendTestEmail } from "./email";
@@ -177,6 +177,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         await db.update(players).set({ flight: flightNum }).where(eq(players.id, gamePlayers[i].id));
       }
       res.json({ flights: numFlights, assignment });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Clear/delete a score for a specific player+hole
+  app.delete("/api/scores/:gameId/:playerId/:hole", async (req, res) => {
+    try {
+      const gameId = Number(req.params.gameId);
+      const playerId = Number(req.params.playerId);
+      const hole = Number(req.params.hole);
+      await db.delete(scores).where(and(eq(scores.gameId, gameId), eq(scores.playerId, playerId), eq(scores.hole, hole)));
+      res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

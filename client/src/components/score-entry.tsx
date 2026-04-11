@@ -201,6 +201,22 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
                 </button>
               ))}
             </div>
+            {/* Clear score button */}
+            {grossScore && (
+              <button
+                onClick={async () => {
+                  if (!player || !confirm("Clear this hole's score?")) return;
+                  try {
+                    await apiRequest("DELETE", `/api/scores/${game.id}/${player.id}/${currentHole}`);
+                    queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] });
+                    toast({ title: `Hole ${currentHole} cleared` });
+                  } catch (e: any) { toast({ title: "Clear failed", description: e.message, variant: "destructive" }); }
+                }}
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors mt-2"
+              >
+                Clear this hole
+              </button>
+            )}
           </div>
 
           {/* Longest Drive — winner buttons + distance per player */}

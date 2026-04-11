@@ -123,6 +123,16 @@ async function initDatabase(): Promise<void> {
     }
   } catch (e) { console.log("[STORAGE] Duplicate cleanup skipped:", e); }
 
+  // Clean up ghost score rows (no grossScore, no LD, no CTP — empty rows from clearing bugs)
+  try {
+    const ghosts = await client.execute(
+      `DELETE FROM scores WHERE gross_score IS NULL AND (longest_drive IS NULL OR longest_drive = 0) AND (closest_pin IS NULL OR closest_pin = 0)`
+    );
+    if ((ghosts as any).rowsAffected > 0) {
+      console.log(`[STORAGE] Cleaned ${(ghosts as any).rowsAffected} ghost score rows`);
+    }
+  } catch (e) { console.log("[STORAGE] Ghost cleanup skipped:", e); }
+
   const result = await client.execute("SELECT COUNT(*) as count FROM games");
   const gameCount = (result.rows[0] as any)?.count ?? 0;
   console.log(`[STORAGE] Database ready — ${gameCount} games`);
@@ -201,6 +211,14 @@ export class DatabaseStorage {
         return (await db.update(scores).set(updateData).where(eq(scores.id, best.id)).returning())[0];
       }
       return best;
+    }
+    // Don't create ghost rows — only insert if there's actual data to store
+    const hasData = (data.grossScore !== undefined && data.grossScore !== null) ||
+                    (data.longestDrive !== undefined && data.longestDrive !== null) ||
+                    (data.closestPin !== undefined && data.closestPin !== null);
+    if (!hasData) {
+      // Nothing to store and no existing row — skip silently
+      return { id: 0, gameId, playerId, hole, grossScore: null, longestDrive: null, closestPin: null } as Score;
     }
     return (await db.insert(scores).values({
       gameId, playerId, hole,
