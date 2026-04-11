@@ -225,8 +225,10 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             const setLdWinner = async (winnerId: number) => {
               const alreadyWinner = ldWinner?.playerId === winnerId;
               try {
-                // Clear ALL LD values on this hole for clean state
-                const clearPromises = players
+                // Only clear LD for players in the SAME FLIGHT as the winner (don't cross-clear other flights)
+                const winnerFlight = (players.find(p => p.id === winnerId) as any)?.flight || 0;
+                const sameFlightPlayers = players.filter(p => ((p as any).flight || 0) === winnerFlight);
+                const clearPromises = sameFlightPlayers
                   .filter(pl => scores.find(s => s.playerId === pl.id && s.hole === currentHole)?.longestDrive)
                   .map(pl => apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null }));
                 await Promise.all(clearPromises);
@@ -289,7 +291,9 @@ export default function ScoreEntry({ game, players, scores, selectedPlayerId, on
             const setCtpWinner = async (winnerId: number) => {
               const alreadyWinner = ctpWinner?.playerId === winnerId;
               try {
-                const clearPromises = players
+                const winnerFlight = (players.find(p => p.id === winnerId) as any)?.flight || 0;
+                const sameFlightPlayers = players.filter(p => ((p as any).flight || 0) === winnerFlight);
+                const clearPromises = sameFlightPlayers
                   .filter(pl => scores.find(s => s.playerId === pl.id && s.hole === currentHole)?.closestPin)
                   .map(pl => apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null }));
                 await Promise.all(clearPromises);

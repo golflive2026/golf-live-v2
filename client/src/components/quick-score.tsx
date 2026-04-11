@@ -153,7 +153,16 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
               {quickValues.map(v => (
                 <button
                   key={v}
-                  onClick={() => saveScore(player.id, v)}
+                  onClick={() => {
+                    if (existing === v) {
+                      // Double-tap same score = clear it
+                      apiRequest("DELETE", `/api/scores/${game.id}/${player.id}/${currentHole}`)
+                        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/games", game.id, "full"] }))
+                        .catch(e => console.error("Clear failed", e));
+                    } else {
+                      saveScore(player.id, v);
+                    }
+                  }}
                   className={`h-11 rounded-md text-sm font-bold transition-all ${
                     existing === v
                       ? "golf-gradient text-white ring-2 ring-primary/50"
@@ -226,14 +235,15 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
                 <button key={p.id}
                   onClick={async () => {
                     try {
-                      // Clear ALL LD values on this hole
+                      // Only clear LD for players in the SAME FLIGHT (don't cross-clear)
+                      const winnerFlight = (p as any).flight || 0;
                       for (const pl of players) {
+                        if (((pl as any).flight || 0) !== winnerFlight) continue;
                         const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
                         if (ps?.longestDrive) {
                           await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, longestDrive: null });
                         }
                       }
-                      // Set new winner (or leave cleared if same player tapped again)
                       if (!isWinner) {
                         await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: p.id, hole: currentHole, longestDrive: 999 });
                       }
@@ -260,7 +270,9 @@ export default function QuickScore({ game, players, scores, course, onHoleChange
                 <button key={p.id}
                   onClick={async () => {
                     try {
+                      const winnerFlight = (p as any).flight || 0;
                       for (const pl of players) {
+                        if (((pl as any).flight || 0) !== winnerFlight) continue;
                         const ps = scores.find(s => s.playerId === pl.id && s.hole === currentHole);
                         if (ps?.closestPin) {
                           await apiRequest("POST", "/api/scores", { gameId: game.id, playerId: pl.id, hole: currentHole, closestPin: null });
