@@ -28,6 +28,8 @@ export default function Settlement({ game, players, scores, course, achievements
   const isAction = game.gameMode === "action";
   const isStableford = game.gameMode === "stableford";
 
+  const isLive = game.status === "active";
+
   const { settlement, entries } = useMemo(() => {
     let settlement: ReturnType<typeof computeSettlement>;
     let entries: ReturnType<typeof computeLeaderboard>;
@@ -42,15 +44,15 @@ export default function Settlement({ game, players, scores, course, achievements
       entries = computeLeaderboard(players, scores, course);
     } else if (isStableford) {
       const stablefordEntries = computeStablefordLeaderboard(players, scores, course);
-      settlement = computeStablefordSettlement(stablefordEntries, scores, players, game, course);
+      settlement = computeStablefordSettlement(stablefordEntries, scores, players, game, course, isLive);
       entries = stablefordEntries;
     } else {
       entries = computeLeaderboard(players, scores, course);
-      settlement = computeSettlement(entries, scores, players, game, course);
+      settlement = computeSettlement(entries, scores, players, game, course, isLive);
     }
 
     return { settlement, entries };
-  }, [players, scores, course, game, achievements, isAction, isStableford]);
+  }, [players, scores, course, game, achievements, isAction, isStableford, isLive]);
 
   // Detect flights for per-flight special display
   const flightSet = new Set(players.map(p => (p as any).flight || 0));

@@ -166,9 +166,10 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
   const entries = useMemo(() => isStableford
     ? computeStablefordLeaderboard(players, scores, course)
     : computeLeaderboard(players, scores, course), [players, scores, course, isStableford]);
+  const isLive = game.status === "active";
   const matchPlay = useMemo(() => isStableford
-    ? computeStablefordMatchPlay(entries as any, game.first9Bet, game.second9Bet, game.wholeGameBet)
-    : computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet), [entries, isStableford, game.first9Bet, game.second9Bet, game.wholeGameBet]);
+    ? computeStablefordMatchPlay(entries as any, game.first9Bet, game.second9Bet, game.wholeGameBet, isLive)
+    : computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet, isLive), [entries, isStableford, isLive, game.first9Bet, game.second9Bet, game.wholeGameBet]);
   const birdieEagle = useMemo(() => computeBirdieEagle(entries, game.birdiePot, game.eaglePot), [entries, game.birdiePot, game.eaglePot]);
   const special = useMemo(() => computeSpecialBets(scores, players, game.longestDriveBet, game.closestPinBet, course), [scores, players, game.longestDriveBet, game.closestPinBet, course]);
 
@@ -186,9 +187,10 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
 
       <TabsContent value="match" className="space-y-2">
         <div className="text-xs text-muted-foreground mb-3">
+          {isLive && <span className="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 text-[10px] font-bold mr-1.5">LIVE</span>}
           {isStableford
-            ? `Comparing Stableford points (highest wins) · Front 9 (${game.first9Bet}) · Back 9 (${game.second9Bet}) · Full (${game.wholeGameBet})`
-            : `Winner-takes-all · Front 9 (${game.first9Bet}) · Back 9 (${game.second9Bet}) · Full (${game.wholeGameBet})`
+            ? `Stableford (highest wins) · F9 (${game.first9Bet}) · B9 (${game.second9Bet}) · Full (${game.wholeGameBet})`
+            : `Winner-takes-all · F9 (${game.first9Bet}) · B9 (${game.second9Bet}) · Full (${game.wholeGameBet})`
           }
         </div>
         {matchPlay.sort((a, b) => b.total - a.total).map(r => (

@@ -63,16 +63,21 @@ export function computeLeaderboard(players: Player[], allScores: Score[], course
 
 export interface MatchPlayResult { playerId: number; playerName: string; front9: number; back9: number; wholeGame: number; total: number; }
 
-export function computeMatchPlay(entries: LeaderboardEntry[], front9Bet: number, back9Bet: number, wholeGameBet: number): MatchPlayResult[] {
+export function computeMatchPlay(entries: LeaderboardEntry[], front9Bet: number, back9Bet: number, wholeGameBet: number, live: boolean = false): MatchPlayResult[] {
   const results: MatchPlayResult[] = entries.map(e => ({ playerId: e.player.id, playerName: e.player.name, front9: 0, back9: 0, wholeGame: 0, total: 0 }));
   if (entries.length < 2) return results;
   const idxMap = new Map<number, number>();
   entries.forEach((e, i) => idxMap.set(e.player.id, i));
   function settle(getNet: (e: LeaderboardEntry) => number, isComplete: (e: LeaderboardEntry) => boolean, bet: number, field: "front9" | "back9" | "wholeGame") {
-    if (!entries.every(isComplete)) return;
-    const bestNet = Math.min(...entries.map(getNet));
-    const winners = entries.filter(e => getNet(e) === bestNet);
-    const losers = entries.filter(e => getNet(e) !== bestNet);
+    // Live mode: show provisional results even before all players finish
+    // Final mode: only settle when all players have completed the section
+    if (!live && !entries.every(isComplete)) return;
+    // In live mode, only include players who have at least 1 hole scored
+    const eligible = live ? entries.filter(e => e.holesPlayed > 0) : entries;
+    if (eligible.length < 2) return;
+    const bestNet = Math.min(...eligible.map(getNet));
+    const winners = eligible.filter(e => getNet(e) === bestNet);
+    const losers = eligible.filter(e => getNet(e) !== bestNet);
     if (losers.length === 0) return;
     const perWinner = (bet * losers.length) / winners.length;
     for (const w of winners) results[idxMap.get(w.player.id)!][field] = perWinner;
@@ -182,9 +187,9 @@ export interface SettlementEntry { playerId: number; playerName: string; matchPl
 export function computeSettlement(
   entries: LeaderboardEntry[], allScores: Score[], players: Player[],
   game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number },
-  course: CourseData,
+  course: CourseData, live: boolean = false,
 ): SettlementEntry[] {
-  const matchPlay = computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
+  const matchPlay = computeMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet, live);
   const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
   const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course);
   const settlement: SettlementEntry[] = players.map(p => {
@@ -251,16 +256,18 @@ export function computeStablefordLeaderboard(players: Player[], allScores: Score
   return entries;
 }
 
-export function computeStablefordMatchPlay(entries: StablefordEntry[], front9Bet: number, back9Bet: number, wholeGameBet: number): MatchPlayResult[] {
+export function computeStablefordMatchPlay(entries: StablefordEntry[], front9Bet: number, back9Bet: number, wholeGameBet: number, live: boolean = false): MatchPlayResult[] {
   const results: MatchPlayResult[] = entries.map(e => ({ playerId: e.player.id, playerName: e.player.name, front9: 0, back9: 0, wholeGame: 0, total: 0 }));
   if (entries.length < 2) return results;
   const idxMap = new Map<number, number>();
   entries.forEach((e, i) => idxMap.set(e.player.id, i));
   function settle(getPts: (e: StablefordEntry) => number, isComplete: (e: StablefordEntry) => boolean, bet: number, field: "front9" | "back9" | "wholeGame") {
-    if (!entries.every(isComplete)) return;
-    const bestPts = Math.max(...entries.map(getPts)); // highest wins in Stableford
-    const winners = entries.filter(e => getPts(e) === bestPts);
-    const losers = entries.filter(e => getPts(e) !== bestPts);
+    if (!live && !entries.every(isComplete)) return;
+    const eligible = live ? entries.filter(e => e.holesPlayed > 0) : entries;
+    if (eligible.length < 2) return;
+    const bestPts = Math.max(...eligible.map(getPts));
+    const winners = eligible.filter(e => getPts(e) === bestPts);
+    const losers = eligible.filter(e => getPts(e) !== bestPts);
     if (losers.length === 0) return;
     const perWinner = (bet * losers.length) / winners.length;
     for (const w of winners) results[idxMap.get(w.player.id)!][field] = perWinner;
@@ -276,9 +283,9 @@ export function computeStablefordMatchPlay(entries: StablefordEntry[], front9Bet
 export function computeStablefordSettlement(
   entries: StablefordEntry[], allScores: Score[], players: Player[],
   game: { first9Bet: number; second9Bet: number; wholeGameBet: number; birdiePot: number; eaglePot: number; longestDriveBet: number; closestPinBet: number; ldCtpMode?: string },
-  course: CourseData,
+  course: CourseData, live: boolean = false,
 ): SettlementEntry[] {
-  const matchPlay = computeStablefordMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet);
+  const matchPlay = computeStablefordMatchPlay(entries, game.first9Bet, game.second9Bet, game.wholeGameBet, live);
   const birdieEagle = computeBirdieEagle(entries, game.birdiePot, game.eaglePot);
   const special = computeSpecialBets(allScores, players, game.longestDriveBet, game.closestPinBet, course);
   const settlement: SettlementEntry[] = players.map(p => {
