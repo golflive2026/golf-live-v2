@@ -112,8 +112,10 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
 
       // Keep alive on Render free tier — self-ping every 10 min ONLY when active games exist
+      // Also runs daily auto-backup to GitHub
       const renderUrl = process.env.RENDER_EXTERNAL_URL;
       if (renderUrl) {
+        const { checkAndRunBackup } = require("./backup");
         setInterval(async () => {
           try {
             const { storage } = require("./storage");
@@ -122,9 +124,13 @@ app.use((req, res, next) => {
             if (hasActive) {
               await fetch(`${renderUrl}/api/health`);
             }
+            // Check if daily backup is needed
+            checkAndRunBackup();
           } catch {}
         }, 10 * 60 * 1000);
-        log("Smart keep-alive enabled (pings only during active games)");
+        // Run backup check on startup too
+        checkAndRunBackup();
+        log("Smart keep-alive + daily auto-backup enabled");
       }
     },
   );

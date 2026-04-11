@@ -539,7 +539,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/health", async (_req, res) => {
     const status = await getStorageStatus();
-    res.json({ ...status, version: "2025-04-09-v8", emailConfigured: !!process.env.BREVO_API_KEY });
+    res.json({ ...status, version: "2025-04-11-v9", emailConfigured: !!process.env.BREVO_API_KEY, backupConfigured: !!process.env.GITHUB_TOKEN });
+  });
+
+  // Manual backup trigger
+  app.post("/api/backup", async (_req, res) => {
+    try {
+      const { runAutoBackup } = require("./backup");
+      await runAutoBackup();
+      res.json({ ok: true, message: "Backup completed" });
+    } catch (e: any) { res.json({ ok: false, message: e.message }); }
   });
 
   // Test email — verify Resend config works
