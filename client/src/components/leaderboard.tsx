@@ -247,8 +247,14 @@ export default function Leaderboard({ players, scores, course, game, achievement
                 </div>
 
                 <div className="min-w-0">
-                  <div className="font-semibold text-sm truncate" data-testid={`text-player-name-${entry.player.id}`}>
-                    {entry.player.name}
+                  <div className="font-semibold text-sm truncate flex items-center gap-1.5" data-testid={`text-player-name-${entry.player.id}`}>
+                    <span className="truncate">{entry.player.name}</span>
+                    {(entry.player as any).withdrawn === 1 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 shrink-0">↩ F9</span>
+                    )}
+                    {(entry.player as any).withdrawn === 2 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 shrink-0">↩ Out</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <span>HCP {entry.player.handicap}</span>

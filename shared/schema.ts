@@ -14,6 +14,8 @@ export interface CourseData {
   holeHcp: readonly number[];
   par3Holes: readonly number[];
   longestDriveHoles: readonly number[];
+  courseRating?: number;  // WHS course rating
+  slope?: number;          // WHS slope rating (default 113 if missing)
 }
 
 function mkCourse(id: string, name: string, location: string, holePars: number[], holeHcp: number[], longestDriveHoles?: number[]): CourseData {
@@ -24,24 +26,24 @@ function mkCourse(id: string, name: string, location: string, holePars: number[]
 }
 
 export const COURSES: Record<string, CourseData> = {
-  "st-sofia": mkCourse("st-sofia", "St. Sofia Golf Club", "Ravno Pole, Bulgaria",
+  "st-sofia": { ...mkCourse("st-sofia", "St. Sofia Golf Club", "Ravno Pole, Bulgaria",
     [5, 4, 4, 3, 4, 3, 4, 4, 5, 4, 4, 3, 4, 4, 3, 5, 4, 4],
-    [9, 15, 5, 11, 1, 17, 7, 3, 13, 10, 4, 16, 2, 18, 14, 6, 8, 12]),
-  "pravetz": mkCourse("pravetz", "Pravetz Golf Club", "Pravetz, Bulgaria",
+    [9, 15, 5, 11, 1, 17, 7, 3, 13, 10, 4, 16, 2, 18, 14, 6, 8, 12]), courseRating: 71.0, slope: 113 },  // No real data — neutral default
+  "pravetz": { ...mkCourse("pravetz", "Pravetz Golf Club", "Pravetz, Bulgaria",
     [5, 4, 3, 5, 4, 4, 4, 3, 4, 4, 5, 4, 3, 4, 4, 5, 3, 4],
-    [2, 6, 18, 4, 14, 16, 8, 12, 10, 1, 5, 9, 17, 11, 3, 7, 15, 13]),
-  "thracian-cliffs": mkCourse("thracian-cliffs", "Thracian Cliffs", "Kavarna, Bulgaria",
+    [2, 6, 18, 4, 14, 16, 8, 12, 10, 1, 5, 9, 17, 11, 3, 7, 15, 13]), courseRating: 72.4, slope: 133 },
+  "thracian-cliffs": { ...mkCourse("thracian-cliffs", "Thracian Cliffs", "Kavarna, Bulgaria",
     [4, 5, 5, 4, 3, 3, 4, 4, 4, 5, 4, 4, 4, 5, 3, 4, 4, 3],
-    [17, 1, 13, 9, 15, 5, 3, 11, 7, 6, 4, 12, 18, 16, 8, 2, 10, 14]),
-  "lighthouse": mkCourse("lighthouse", "Lighthouse Golf & Spa", "Balchik, Bulgaria",
+    [17, 1, 13, 9, 15, 5, 3, 11, 7, 6, 4, 12, 18, 16, 8, 2, 10, 14]), courseRating: 75.3, slope: 145 },
+  "lighthouse": { ...mkCourse("lighthouse", "Lighthouse Golf & Spa", "Balchik, Bulgaria",
     [4, 4, 5, 4, 5, 3, 4, 3, 4, 4, 3, 5, 4, 3, 4, 5, 3, 4],
-    [5, 7, 13, 9, 3, 15, 11, 17, 1, 4, 6, 12, 18, 14, 8, 10, 16, 2]),
-  "blacksearama": mkCourse("blacksearama", "BlackSeaRama Golf", "Balchik, Bulgaria",
+    [5, 7, 13, 9, 3, 15, 11, 17, 1, 4, 6, 12, 18, 14, 8, 10, 16, 2]), courseRating: 73.6, slope: 128 },
+  "blacksearama": { ...mkCourse("blacksearama", "BlackSeaRama Golf", "Balchik, Bulgaria",
     [5, 4, 4, 4, 3, 4, 4, 3, 5, 4, 5, 4, 3, 4, 4, 4, 5, 3],
-    [12, 6, 18, 2, 16, 8, 4, 14, 10, 11, 9, 1, 13, 5, 17, 3, 15, 7]),
-  "ihtiman": mkCourse("ihtiman", "Air Sofia Golf Club", "Ihtiman, Bulgaria",
+    [12, 6, 18, 2, 16, 8, 4, 14, 10, 11, 9, 1, 13, 5, 17, 3, 15, 7]), courseRating: 73.1, slope: 123 },
+  "ihtiman": { ...mkCourse("ihtiman", "Air Sofia Golf Club", "Ihtiman, Bulgaria",
     [4, 3, 4, 5, 4, 4, 4, 4, 5, 3, 4, 3, 5, 4, 3, 4, 4, 4],
-    [9, 13, 5, 1, 17, 3, 15, 7, 11, 12, 8, 18, 14, 2, 4, 16, 6, 10]),
+    [9, 13, 5, 1, 17, 3, 15, 7, 11, 12, 8, 18, 14, 2, 4, 16, 6, 10]), courseRating: 71.2, slope: 131 },
 };
 
 export const COURSE_LIST = Object.values(COURSES);
@@ -168,6 +170,7 @@ export const players = sqliteTable("players", {
   handicap: integer("handicap").notNull().default(0),
   rosterId: integer("roster_id"),
   flight: integer("flight").default(0),
+  withdrawn: integer("withdrawn").default(0), // 0=active, 1=withdrew F9 (include F9), 2=excluded (no bets)
 });
 
 export const insertPlayerSchema = createInsertSchema(players).omit({ id: true });
@@ -240,6 +243,7 @@ export const roster = sqliteTable("roster", {
   active: integer("active").notNull().default(1),
   email: text("email"),
   notificationsEnabled: integer("notifications_enabled").notNull().default(0),
+  handicapIndex: real("handicap_index"),  // WHS calculated index, nullable
 });
 
 export type RosterPlayer = typeof roster.$inferSelect;

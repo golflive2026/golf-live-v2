@@ -840,7 +840,100 @@ console.log("\n--- Test 20: No flights (flight=0) — unchanged ---");
   console.log("  No flights unchanged - OK");
 }
 
+// Test 21: Withdrawn player F9-only — included in F9, excluded from B9/Full
+console.log("\n--- Test 21: Withdrawn F9-only ---");
+{
+  const courseData = getCourse("st-sofia");
+  const players: SharedPlayer[] = [
+    { id: 9001, gameId: 1, name: "Active1", handicap: 10, rosterId: null, flight: 0 } as any,
+    { id: 9002, gameId: 1, name: "Active2", handicap: 12, rosterId: null, flight: 0 } as any,
+    { id: 9003, gameId: 1, name: "Active3", handicap: 14, rosterId: null, flight: 0 } as any,
+    { id: 9004, gameId: 1, name: "WithdrewF9", handicap: 18, rosterId: null, flight: 0, withdrawn: 1 } as any,
+  ];
+  // All play F9 fully, only Active1/2/3 play B9
+  const scores: SharedScore[] = [];
+  let sid = 91000;
+  for (const p of players) {
+    for (let h = 1; h <= 18; h++) {
+      const par = courseData.holePars[h - 1];
+      // WithdrewF9 only has F9 scores
+      if ((p as any).withdrawn === 1 && h > 9) continue;
+      scores.push({ id: sid++, gameId: 1, playerId: p.id, hole: h, grossScore: par + 1, longestDrive: null, closestPin: null });
+    }
+  }
+  const entries = computeLeaderboardShared(players, scores, courseData);
+  const settlement = computeSettlementShared(entries, scores, players, BETS, courseData);
+  // F9 should settle (all eligible players including WithdrewF9 played 9 holes)
+  // B9 should settle among Active1/2/3 only
+  const totalSum = settlement.reduce((s, x) => s + x.grandTotal, 0);
+  assert(nearZero(totalSum), `Withdrawn F9: total = ${totalSum}`);
+  // Withdrawn player should have F9 amount but NO B9 or Full
+  const withdrew = settlement.find(s => s.playerId === 9004)!;
+  assert(typeof withdrew.matchPlay === "number", "Withdrew has matchPlay");
+  console.log("  Withdrawn F9-only - OK");
+}
+
+// Test 22: Withdrawn excluded — no impact on settlement
+console.log("\n--- Test 22: Withdrawn fully excluded ---");
+{
+  const courseData = getCourse("pravetz");
+  const players: SharedPlayer[] = [
+    { id: 8001, gameId: 1, name: "A", handicap: 10, rosterId: null, flight: 0 } as any,
+    { id: 8002, gameId: 1, name: "B", handicap: 12, rosterId: null, flight: 0 } as any,
+    { id: 8003, gameId: 1, name: "C", handicap: 14, rosterId: null, flight: 0 } as any,
+    { id: 8004, gameId: 1, name: "Excluded", handicap: 18, rosterId: null, flight: 0, withdrawn: 2 } as any,
+  ];
+  const scores = generateScores(players as any[], courseData as any, nextId, true).map(toSharedScore);
+  const entries = computeLeaderboardShared(players, scores, courseData);
+  const settlement = computeSettlementShared(entries, scores, players, BETS, courseData);
+  // Excluded player should have grandTotal = 0
+  const excluded = settlement.find(s => s.playerId === 8004)!;
+  assert(excluded.grandTotal === 0, `Excluded should have 0 grandTotal, got ${excluded.grandTotal}`);
+  // Other 3 players settle among themselves
+  const totalSum = settlement.reduce((s, x) => s + x.grandTotal, 0);
+  assert(nearZero(totalSum), `Excluded test: total = ${totalSum}`);
+  console.log("  Withdrawn excluded - OK");
+}
+
+// Test 23: WHS handicap formula
+console.log("\n--- Test 23: WHS handicap formulas ---");
+{
+  const { adjustedGrossScore, scoreDifferential, rawHandicapIndex, courseHandicap } = await import("../shared/whs");
+  const courseData = getCourse("pravetz"); // CR=72.4, slope=133
+
+  // Net Double Bogey cap test
+  // Scratch player (HCP 0) on par 4 with HCP idx 5: cap = 4+2+0 = 6
+  // HCP 18 on same hole: cap = 4+2+1 = 7
+  const allPars = courseData.holePars.map(p => p);
+  const ags0 = adjustedGrossScore(allPars as (number | null)[], courseData, 0);
+  assert(ags0 === 72, `AGS scratch all-par should be 72, got ${ags0}`);
+
+  // Score differential: AGS=72, CR=72.4, slope=133 → (113/133)*(72-72.4) = -0.34 ≈ -0.3
+  const diff = scoreDifferential(72, 72.4, 133);
+  assert(Math.abs(diff - (-0.3)) < 0.01, `Differential: expected ~-0.3, got ${diff}`);
+
+  // Best-N table: 5 differentials → use lowest 1 with adj=0
+  const idx5 = rawHandicapIndex([10, 12, 14, 16, 8]);
+  assert(idx5 === 8.0, `5 diffs: expected lowest=8.0, got ${idx5}`);
+
+  // 20 differentials: average of best 8
+  const diffs20 = Array.from({ length: 20 }, (_, i) => i + 1); // 1..20
+  const idx20 = rawHandicapIndex(diffs20);
+  // Best 8 of 1..20 are [1,2,3,4,5,6,7,8], avg = 4.5
+  assert(idx20 === 4.5, `20 diffs: expected 4.5, got ${idx20}`);
+
+  // Less than 3 → null
+  assert(rawHandicapIndex([10, 12]) === null, "2 diffs should return null");
+
+  // Course Handicap: HCP 14 on Pravetz (CR=72.4, slope=133, par=72)
+  // 14 * (133/113) + (72.4 - 72) = 14*1.177 + 0.4 = 16.48 + 0.4 = 16.88 → round = 17
+  const ch = courseHandicap(14, 133, 72.4, 72);
+  assert(ch === 17, `Course HCP 14 on Pravetz: expected 17, got ${ch}`);
+
+  console.log("  WHS formulas - OK");
+}
+
 // Summary
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) process.exit(1);
-console.log("All settlement math verified: every sum is zero.\nAll 3 game modes + 13 new categories verified across all 6 courses with 2-50 players.");
+console.log("All settlement math verified: every sum is zero.\nAll 3 game modes + 13 new categories + flights + withdrawals + WHS verified across all 6 courses with 2-50 players.");

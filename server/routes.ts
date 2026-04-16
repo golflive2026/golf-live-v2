@@ -4,6 +4,7 @@ import { storage, db, exportAllData, importAllData, getStorageStatus } from "./s
 import { COURSE_LIST, getCourse, players, scores } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { computeLeaderboard, computeSettlement } from "@shared/golf";
+import { computeHandicapFromRounds, type PlayerRound } from "@shared/whs";
 import { computeBadges } from "./badges";
 import { sendGameStartNotifications, sendTestEmail } from "./email";
 
@@ -145,6 +146,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       } catch (e) {}
       const player = await storage.createPlayer({ gameId, name: name.trim(), handicap: handicap ?? 0, rosterId: linkedRosterId, flight: flight ?? 0 });
       res.json(player);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Update player withdrawal status: 0=active, 1=withdrew F9, 2=excluded
+  app.patch("/api/players/:id/withdraw", async (req, res) => {
+    try {
+      const { mode } = req.body;
+      if (![0, 1, 2].includes(mode)) return res.status(400).json({ error: "mode must be 0, 1, or 2" });
+      const rows = await db.update(players).set({ withdrawn: mode }).where(eq(players.id, Number(req.params.id))).returning();
+      if (!rows[0]) return res.status(404).json({ error: "Player not found" });
+      res.json(rows[0]);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -446,6 +458,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // Apply WHS handicap (player accepts the calculated index — updates stored handicap + index)
+  app.post("/api/roster/:id/apply-whs", async (req, res) => {
+    try {
+      const rosterId = Number(req.params.id);
+      const rp = await storage.getRosterPlayer(rosterId);
+      if (!rp) return res.status(404).json({ error: "Player not found" });
+      const { pin, handicapIndex } = req.body;
+      if (rp.pin && rp.pin !== pin) return res.status(403).json({ error: "Invalid PIN" });
+      if (typeof handicapIndex !== "number") return res.status(400).json({ error: "handicapIndex required" });
+      const courseHandicap = Math.round(handicapIndex);  // simple round to int
+      await storage.updateRosterPlayer(rosterId, { handicap: courseHandicap, handicapIndex } as any);
+      res.json({ ok: true, handicap: courseHandicap, handicapIndex });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Get player stats across all games
   app.get("/api/roster/:id/stats", async (req, res) => {
     try {
@@ -501,6 +528,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const totalMoney = finished.reduce((sum: number, g: any) => sum + g.moneyWon, 0);
       const avgGross = full18.length > 0 ? full18.reduce((s: number, g: any) => s + g.grossTotal, 0) / full18.length : 0;
       const avgNet = full18.length > 0 ? full18.reduce((s: number, g: any) => s + g.netTotal, 0) / full18.length : 0;
+
+      // === WHS handicap calculation ===
+      const finishedFull18 = validHistory.filter(g => g.gameStatus === "finished" && g.holesPlayed === 18);
+      const rounds: PlayerRound[] = [];
+      for (const gh of finishedFull18) {
+        const game = await storage.getGame(gh.gameId);
+        if (!game) continue;
+        const course = getCourse(game.courseId);
+        const allScores = await storage.getScoresByGame(game.id);
+        const lp = linkedPlayers.find(p => p.gameId === game.id);
+        if (!lp) continue;
+        const myScores = allScores.filter(s => s.playerId === lp.id);
+        const holeScores: (number | null)[] = Array(18).fill(null);
+        for (const s of myScores) holeScores[s.hole - 1] = s.grossScore;
+        rounds.push({ holeScores, course, storedHandicap: gh.handicap });
+      }
+      const whs = computeHandicapFromRounds(rounds);
+
       res.json({
         rosterId, name: rp.name, handicap: rp.handicap,
         statsPublic: !!rp.statsPublic,
@@ -513,6 +558,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         totalEagles: validHistory.reduce((s: number, g: any) => s + g.eagles, 0),
         wins: finished.filter((g: any) => g.position === 1).length,
         gameHistory: validHistory,
+        handicapIndex: whs.index,  // null if < 3 rounds
+        whsRoundsCount: rounds.length,
+        storedHandicapIndex: rp.handicapIndex,
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

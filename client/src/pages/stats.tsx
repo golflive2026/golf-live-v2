@@ -31,6 +31,7 @@ import {
   Lock,
   Eye,
   EyeOff,
+  BarChart3,
 } from "lucide-react";
 import {
   LineChart,
@@ -80,6 +81,9 @@ interface StatsData {
   totalEagles: number;
   wins: number;
   gameHistory: GameStat[];
+  handicapIndex: number | null;
+  whsRoundsCount: number;
+  storedHandicapIndex: number | null;
 }
 
 export default function StatsPage() {
@@ -123,6 +127,27 @@ export default function StatsPage() {
       await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId] });
       await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId, "stats", enteredPin] });
       toast({ title: `Handicap updated to ${newHandicap}` });
+    } catch {
+      toast({ title: "Failed to update", variant: "destructive" });
+    }
+  };
+
+  const applyWhs = async (index: number) => {
+    const pin = prompt("Enter your 4-digit PIN to update handicap:");
+    if (!pin) return;
+    try {
+      const res = await fetch(`/api/roster/${rosterId}/apply-whs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin, handicapIndex: index }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: err.error || "Failed", variant: "destructive" });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/roster", rosterId, "stats"] });
+      toast({ title: "Handicap updated" });
     } catch {
       toast({ title: "Failed to update", variant: "destructive" });
     }
@@ -389,6 +414,49 @@ export default function StatsPage() {
             )}
           </div>
         </div>
+
+        {/* WHS Handicap Index card */}
+        {stats.handicapIndex !== null && (
+          <Card className="border-border mb-4">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <BarChart3 className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-bold">WHS Handicap Index</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase">Stored (Course HCP)</div>
+                  <div className="text-2xl font-bold tabular-nums">{stats.handicap}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase">Suggested (Index)</div>
+                  <div className={`text-2xl font-bold tabular-nums ${
+                    Math.abs(stats.handicap - stats.handicapIndex) > 3 ? "text-orange-600" : ""
+                  }`}>{stats.handicapIndex.toFixed(1)}</div>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground mb-2">
+                Based on {stats.whsRoundsCount} {stats.whsRoundsCount === 1 ? "round" : "rounds"} (best of last 20)
+              </p>
+              {Math.abs(stats.handicap - stats.handicapIndex) <= 1 ? (
+                <p className="text-xs text-green-600">✓ Stored handicap matches suggested</p>
+              ) : (
+                <Button
+                  size="sm"
+                  className="w-full h-9 golf-gradient text-white border-0"
+                  onClick={() => applyWhs(stats.handicapIndex!)}
+                >
+                  Apply Suggested ({Math.round(stats.handicapIndex)})
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        {stats.handicapIndex === null && stats.gamesFinished > 0 && (
+          <p className="text-[10px] text-muted-foreground text-center py-2">
+            WHS index needs at least 3 finished 18-hole rounds (you have {stats.whsRoundsCount}).
+          </p>
+        )}
 
         {/* Set PIN dialog */}
         {showSetPin && (
