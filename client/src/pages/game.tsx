@@ -242,6 +242,22 @@ export default function GamePage() {
                         </div>
                       );
                     })()}
+                    {/* Add new flight button — for late-joining groups */}
+                    <div className="flex flex-wrap gap-2">
+                      <p className="text-[10px] text-muted-foreground w-full">Move player to a new flight:</p>
+                      {players.filter(p => p.flight && p.flight > 0).map(p => {
+                        const newFlightNum = Math.max(...flightNumbers, 0) + 1;
+                        return (
+                          <button
+                            key={`new-${p.id}`}
+                            onClick={() => updatePlayerFlight(p.id, newFlightNum)}
+                            className="px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-xs font-medium hover:bg-primary/20 transition-colors"
+                          >
+                            {p.name} → F{newFlightNum}
+                          </button>
+                        );
+                      })}
+                    </div>
                     {players.filter(p => !p.flight || p.flight === 0).length > 0 && (
                       <div>
                         <p className="text-xs font-medium text-muted-foreground mb-2">Unassigned</p>

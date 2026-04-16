@@ -179,17 +179,21 @@ export default function ManagePlayers({ gameId, players }: ManagePlayersProps) {
                 min={0}
                 max={54}
               />
-              {hasFlights && (
-                <Select value={String(newFlight)} onValueChange={(v) => setNewFlight(Number(v))}>
-                  <SelectTrigger className="h-11 w-20"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {flightNumbers.map(f => {
-                      const count = players.filter(p => (p as any).flight === f).length;
-                      return <SelectItem key={f} value={String(f)}>F{f} ({count})</SelectItem>;
-                    })}
-                  </SelectContent>
-                </Select>
-              )}
+              {hasFlights && (() => {
+                const nextFlight = Math.max(...flightNumbers) + 1;
+                return (
+                  <Select value={String(newFlight)} onValueChange={(v) => setNewFlight(Number(v))}>
+                    <SelectTrigger className="h-11 w-24"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {flightNumbers.map(f => {
+                        const count = players.filter(p => (p as any).flight === f).length;
+                        return <SelectItem key={f} value={String(f)}>F{f} ({count})</SelectItem>;
+                      })}
+                      <SelectItem value={String(nextFlight)}>+ New F{nextFlight}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                );
+              })()}
               <Button
                 size="icon"
                 className="h-11 w-11 golf-gradient text-white border-0 shrink-0"
