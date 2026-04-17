@@ -2,6 +2,15 @@ import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Tee data per tee box
+export interface TeeData {
+  id: string;          // "white", "yellow", "red", etc.
+  name: string;        // Display name
+  courseRating: number;
+  slope: number;
+  gender?: "M" | "F";
+}
+
 // Course data structure
 export interface CourseData {
   id: string;
@@ -14,8 +23,9 @@ export interface CourseData {
   holeHcp: readonly number[];
   par3Holes: readonly number[];
   longestDriveHoles: readonly number[];
-  courseRating?: number;  // WHS course rating
+  courseRating?: number;  // WHS course rating (primary tee fallback)
   slope?: number;          // WHS slope rating (default 113 if missing)
+  tees?: readonly TeeData[];  // Optional per-tee ratings (Advanced setup)
 }
 
 function mkCourse(id: string, name: string, location: string, holePars: number[], holeHcp: number[], longestDriveHoles?: number[]): CourseData {
@@ -28,22 +38,49 @@ function mkCourse(id: string, name: string, location: string, holePars: number[]
 export const COURSES: Record<string, CourseData> = {
   "st-sofia": { ...mkCourse("st-sofia", "St. Sofia Golf Club", "Ravno Pole, Bulgaria",
     [5, 4, 4, 3, 4, 3, 4, 4, 5, 4, 4, 3, 4, 4, 3, 5, 4, 4],
-    [9, 15, 5, 11, 1, 17, 7, 3, 13, 10, 4, 16, 2, 18, 14, 6, 8, 12]), courseRating: 71.0, slope: 113 },  // No real data — neutral default
+    [9, 15, 5, 11, 1, 17, 7, 3, 13, 10, 4, 16, 2, 18, 14, 6, 8, 12]), courseRating: 71.0, slope: 113,
+    tees: [{ id: "default", name: "Default", courseRating: 71.0, slope: 113 }] },
   "pravetz": { ...mkCourse("pravetz", "Pravetz Golf Club", "Pravetz, Bulgaria",
     [5, 4, 3, 5, 4, 4, 4, 3, 4, 4, 5, 4, 3, 4, 4, 5, 3, 4],
-    [2, 6, 18, 4, 14, 16, 8, 12, 10, 1, 5, 9, 17, 11, 3, 7, 15, 13]), courseRating: 72.4, slope: 133 },
+    [2, 6, 18, 4, 14, 16, 8, 12, 10, 1, 5, 9, 17, 11, 3, 7, 15, 13]), courseRating: 72.4, slope: 133,
+    tees: [
+      { id: "blue", name: "Blue", courseRating: 72.4, slope: 133, gender: "M" },
+      { id: "white", name: "White", courseRating: 71.4, slope: 127, gender: "M" },
+      { id: "yellow", name: "Yellow", courseRating: 69.6, slope: 123, gender: "M" },
+      { id: "green", name: "Green", courseRating: 71.9, slope: 126, gender: "F" },
+      { id: "red", name: "Red", courseRating: 71.6, slope: 124, gender: "F" },
+    ] },
   "thracian-cliffs": { ...mkCourse("thracian-cliffs", "Thracian Cliffs", "Kavarna, Bulgaria",
     [4, 5, 5, 4, 3, 3, 4, 4, 4, 5, 4, 4, 4, 5, 3, 4, 4, 3],
-    [17, 1, 13, 9, 15, 5, 3, 11, 7, 6, 4, 12, 18, 16, 8, 2, 10, 14]), courseRating: 75.3, slope: 145 },
+    [17, 1, 13, 9, 15, 5, 3, 11, 7, 6, 4, 12, 18, 16, 8, 2, 10, 14]), courseRating: 75.3, slope: 145,
+    tees: [
+      { id: "black", name: "Black", courseRating: 75.3, slope: 145, gender: "M" },
+      { id: "gold", name: "Gold", courseRating: 72.4, slope: 136, gender: "M" },
+      { id: "silver", name: "Silver", courseRating: 71.2, slope: 132, gender: "M" },
+      { id: "white", name: "White", courseRating: 68.1, slope: 122, gender: "M" },
+      { id: "green", name: "Green", courseRating: 63.4, slope: 111, gender: "F" },
+    ] },
   "lighthouse": { ...mkCourse("lighthouse", "Lighthouse Golf & Spa", "Balchik, Bulgaria",
     [4, 4, 5, 4, 5, 3, 4, 3, 4, 4, 3, 5, 4, 3, 4, 5, 3, 4],
-    [5, 7, 13, 9, 3, 15, 11, 17, 1, 4, 6, 12, 18, 14, 8, 10, 16, 2]), courseRating: 73.6, slope: 128 },
+    [5, 7, 13, 9, 3, 15, 11, 17, 1, 4, 6, 12, 18, 14, 8, 10, 16, 2]), courseRating: 73.6, slope: 128,
+    tees: [
+      { id: "black", name: "Black", courseRating: 73.6, slope: 128, gender: "M" },
+      { id: "blue", name: "Blue", courseRating: 74.2, slope: 128, gender: "M" },
+      { id: "yellow", name: "Yellow", courseRating: 70.0, slope: 124, gender: "M" },
+      { id: "red", name: "Red", courseRating: 71.4, slope: 121, gender: "F" },
+    ] },
   "blacksearama": { ...mkCourse("blacksearama", "BlackSeaRama Golf", "Balchik, Bulgaria",
     [5, 4, 4, 4, 3, 4, 4, 3, 5, 4, 5, 4, 3, 4, 4, 4, 5, 3],
-    [12, 6, 18, 2, 16, 8, 4, 14, 10, 11, 9, 1, 13, 5, 17, 3, 15, 7]), courseRating: 73.1, slope: 123 },
+    [12, 6, 18, 2, 16, 8, 4, 14, 10, 11, 9, 1, 13, 5, 17, 3, 15, 7]), courseRating: 73.1, slope: 123,
+    tees: [{ id: "gold", name: "Gold", courseRating: 73.1, slope: 123, gender: "M" }] },
   "ihtiman": { ...mkCourse("ihtiman", "Air Sofia Golf Club", "Ihtiman, Bulgaria",
     [4, 3, 4, 5, 4, 4, 4, 4, 5, 3, 4, 3, 5, 4, 3, 4, 4, 4],
-    [9, 13, 5, 1, 17, 3, 15, 7, 11, 12, 8, 18, 14, 2, 4, 16, 6, 10]), courseRating: 71.2, slope: 131 },
+    [9, 13, 5, 1, 17, 3, 15, 7, 11, 12, 8, 18, 14, 2, 4, 16, 6, 10]), courseRating: 71.2, slope: 131,
+    tees: [
+      { id: "white", name: "White", courseRating: 71.2, slope: 131, gender: "M" },
+      { id: "yellow", name: "Yellow", courseRating: 69.3, slope: 128, gender: "M" },
+      { id: "red", name: "Red", courseRating: 71.4, slope: 127, gender: "F" },
+    ] },
 };
 
 export const COURSE_LIST = Object.values(COURSES);
@@ -156,6 +193,8 @@ export const games = sqliteTable("games", {
   carryoverEnabled: integer("carryover_enabled").default(0),
   // LD/CTP mode
   ldCtpMode: text("ld_ctp_mode").notNull().default("simple"),
+  // Handicap allowance % (100 = full handicap, default behavior)
+  handicapAllowance: integer("handicap_allowance").notNull().default(100),
 });
 
 export const insertGameSchema = createInsertSchema(games).omit({ id: true });
@@ -170,7 +209,8 @@ export const players = sqliteTable("players", {
   handicap: integer("handicap").notNull().default(0),
   rosterId: integer("roster_id"),
   flight: integer("flight").default(0),
-  withdrawn: integer("withdrawn").default(0), // 0=active, 1=withdrew F9 (include F9), 2=excluded (no bets)
+  withdrawn: integer("withdrawn").default(0), // 0=active, 1=F9 only, 2=excluded, 3=B9 only
+  teeId: text("tee_id"), // Optional tee box (Advanced setup); null = course default
 });
 
 export const insertPlayerSchema = createInsertSchema(players).omit({ id: true });

@@ -239,7 +239,7 @@ export async function computeBadges(
     const gameScores = allScores.filter(s => s.gameId === game.id);
     if (gamePlayers.length < 2) continue;
 
-    const entries = computeLeaderboard(gamePlayers, gameScores, course);
+    const entries = computeLeaderboard(gamePlayers, gameScores, course, (game as any).handicapAllowance ?? 100);
     const settlement = computeSettlement(entries, gameScores, gamePlayers, game, course);
 
     for (const gp of gamePlayers) {

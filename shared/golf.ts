@@ -21,15 +21,18 @@ export function buildScoresMap(allScores: Score[]): Map<number, Map<number, Scor
 export interface LeaderboardEntry {
   player: Player; grossTotal: number; netTotal: number; front9Net: number; back9Net: number;
   front9Gross: number; back9Gross: number; holesPlayed: number; birdies: number; eagles: number;
+  front9Birdies: number; front9Eagles: number; back9Birdies: number; back9Eagles: number;
   vsParDisplay: string; netVsParDisplay: string; holeScores: (number | null)[]; holeNetScores: (number | null)[];
 }
 
-export function computeLeaderboard(players: Player[], allScores: Score[], course: CourseData): LeaderboardEntry[] {
+export function computeLeaderboard(players: Player[], allScores: Score[], course: CourseData, allowancePercent: number = 100): LeaderboardEntry[] {
   const scoresMap = buildScoresMap(allScores);
   const entries: LeaderboardEntry[] = players.map(player => {
     const playerScores = scoresMap.get(player.id) || new Map<number, Score>();
+    const effectiveHcp = Math.round((player.handicap || 0) * allowancePercent / 100);
     let grossTotal = 0, netTotal = 0, front9Net = 0, back9Net = 0, front9Gross = 0, back9Gross = 0;
     let holesPlayed = 0, birdies = 0, eagles = 0;
+    let front9Birdies = 0, front9Eagles = 0, back9Birdies = 0, back9Eagles = 0;
     const holeScores: (number | null)[] = [], holeNetScores: (number | null)[] = [];
     for (let i = 0; i < 18; i++) {
       const score = playerScores.get(i + 1);
@@ -37,11 +40,17 @@ export function computeLeaderboard(players: Player[], allScores: Score[], course
       holeScores.push(gross);
       if (gross !== null) {
         holesPlayed++; grossTotal += gross;
-        const net = getNetScoreForHole(gross, player.handicap, i, course)!;
+        const net = getNetScoreForHole(gross, effectiveHcp, i, course)!;
         netTotal += net; holeNetScores.push(net);
         if (i < 9) { front9Net += net; front9Gross += gross; } else { back9Net += net; back9Gross += gross; }
         const par = course.holePars[i];
-        if (gross <= par - 2) eagles++; else if (gross === par - 1) birdies++;
+        if (gross <= par - 2) {
+          eagles++;
+          if (i < 9) front9Eagles++; else back9Eagles++;
+        } else if (gross === par - 1) {
+          birdies++;
+          if (i < 9) front9Birdies++; else back9Birdies++;
+        }
       } else { holeNetScores.push(null); }
     }
     let parPlayed = 0;
@@ -50,7 +59,7 @@ export function computeLeaderboard(players: Player[], allScores: Score[], course
     const fmtVp = (d: number) => d === 0 ? "E" : (d > 0 ? "+" + d : "" + d);
     const vsParDisplay = holesPlayed === 0 ? "-" : fmtVp(gd);
     const netVsParDisplay = holesPlayed === 0 ? "-" : fmtVp(nd);
-    return { player, grossTotal, netTotal, front9Net, back9Net, front9Gross, back9Gross, holesPlayed, birdies, eagles, vsParDisplay, netVsParDisplay, holeScores, holeNetScores };
+    return { player, grossTotal, netTotal, front9Net, back9Net, front9Gross, back9Gross, holesPlayed, birdies, eagles, front9Birdies, front9Eagles, back9Birdies, back9Eagles, vsParDisplay, netVsParDisplay, holeScores, holeNetScores };
   });
   entries.sort((a, b) => {
     if (a.holesPlayed === 0 && b.holesPlayed === 0) return 0;
@@ -69,7 +78,8 @@ function isInF9Bet(p: Player): boolean {
   return w === 0 || w === 1; // active or withdrew F9
 }
 function isInB9Bet(p: Player): boolean {
-  return ((p as any).withdrawn || 0) === 0; // only active
+  const w = ((p as any).withdrawn || 0);
+  return w === 0 || w === 3; // active or withdrew B9 only (joined late)
 }
 function isInFullBet(p: Player): boolean {
   return ((p as any).withdrawn || 0) === 0; // only active
@@ -109,28 +119,10 @@ export function computeBirdieEagle(entries: LeaderboardEntry[], birdiePot: numbe
   // For withdrawn=2 (excluded): not counted at all
   function effectiveCounts(e: LeaderboardEntry): { b: number; eag: number } {
     const w = ((e.player as any).withdrawn || 0);
-    if (w === 2) return { b: 0, eag: 0 };
-    if (w === 1) {
-      // Count only F9 holes
-      let b = 0, eag = 0;
-      for (let i = 0; i < 9; i++) {
-        const gross = e.holeScores[i];
-        if (gross == null) continue;
-        // Need par to determine — use difference from net score isn't enough; use the holeScores directly via leaderboard's pre-computed birdies/eagles isn't right
-        // Simpler: compute net score and compare to par via holeNetScores
-        const net = e.holeNetScores[i];
-        if (net == null) continue;
-        // We don't have par here easily — fall back to gross-based detection (matches existing logic)
-        // Actually birdies/eagles in leaderboard use GROSS, so we need gross vs par
-        // Course pars aren't passed — but the leaderboard already uses gross-based detection
-        // Just skip for now: F9 birdies/eagles will be accurate to the leaderboard's gross-based count restricted to first 9
-      }
-      // Use a simpler approach: if withdrew F9, use the F9-only counts already in the leaderboard data
-      // But leaderboard's `birdies`/`eagles` are full-round. We'd need to recompute.
-      // For now: include them as if they played full round (the leaderboard already excludes B9 holes that aren't scored)
-      return { b: e.birdies, eag: e.eagles };
-    }
-    return { b: e.birdies, eag: e.eagles };
+    if (w === 2) return { b: 0, eag: 0 };          // excluded
+    if (w === 1) return { b: e.front9Birdies, eag: e.front9Eagles };  // F9 only
+    if (w === 3) return { b: e.back9Birdies, eag: e.back9Eagles };    // B9 only
+    return { b: e.birdies, eag: e.eagles };        // active full round
   }
   const eligible = entries.filter(e => ((e.player as any).withdrawn || 0) !== 2);
   const counts = new Map<number, { b: number; eag: number }>();
@@ -164,12 +156,25 @@ function computeSpecialBetsForGroup(
   const playerTotals = new Map<number, number>();
   groupPlayers.forEach(p => playerTotals.set(p.id, 0));
 
+  // Per-hole eligibility for withdrawn players:
+  // mode 1 (F9 only) → only holes 1-9
+  // mode 3 (B9 only) → only holes 10-18
+  // mode 0 (active) → all holes
+  function eligibleForHole(p: Player, hole: number): boolean {
+    const w = (p as any).withdrawn || 0;
+    if (w === 1) return hole <= 9;
+    if (w === 3) return hole > 9;
+    return true;
+  }
+
   function findWinner(hole: number, field: "longestDrive" | "closestPin", betAmt: number, type: "longest_drive" | "closest_pin", findMin: boolean): SpecialBetResult {
+    // Filter to players eligible for THIS hole (F9-only excluded from B9 holes, etc.)
+    const holePlayers = groupPlayers.filter(p => eligibleForHole(p, hole));
     let markerWinnerId: number | null = null, markerWinnerName = "-";
     let bestId: number | null = null, bestDist = findMin ? Infinity : 0, bestName = "-";
     const participants: number[] = [];
 
-    for (const p of groupPlayers) {
+    for (const p of holePlayers) {
       const val = scoresMap.get(p.id)?.get(hole)?.[field];
       if (val && val >= 999) { markerWinnerId = p.id; markerWinnerName = p.name; }
       if (val && val > 0 && val < 999) {
@@ -179,9 +184,9 @@ function computeSpecialBetsForGroup(
     }
 
     if (markerWinnerId) {
-      const payout = betAmt * (groupPlayers.length - 1);
+      const payout = betAmt * (holePlayers.length - 1);
       playerTotals.set(markerWinnerId, (playerTotals.get(markerWinnerId) || 0) + payout);
-      for (const p of groupPlayers) { if (p.id !== markerWinnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
+      for (const p of holePlayers) { if (p.id !== markerWinnerId) playerTotals.set(p.id, (playerTotals.get(p.id) || 0) - betAmt); }
       return { hole, type, winnerId: markerWinnerId, winnerName: markerWinnerName, winnerValue: 0, payout, flight: flightNum };
     }
 
@@ -261,12 +266,14 @@ export interface StablefordEntry extends LeaderboardEntry {
   holeStablefordPoints: (number | null)[];
 }
 
-export function computeStablefordLeaderboard(players: Player[], allScores: Score[], course: CourseData): StablefordEntry[] {
+export function computeStablefordLeaderboard(players: Player[], allScores: Score[], course: CourseData, allowancePercent: number = 100): StablefordEntry[] {
   const scoresMap = buildScoresMap(allScores);
   const entries: StablefordEntry[] = players.map(player => {
     const playerScores = scoresMap.get(player.id) || new Map<number, Score>();
+    const effectiveHcp = Math.round((player.handicap || 0) * allowancePercent / 100);
     let grossTotal = 0, netTotal = 0, front9Net = 0, back9Net = 0, front9Gross = 0, back9Gross = 0;
     let holesPlayed = 0, birdies = 0, eagles = 0;
+    let front9Birdies = 0, front9Eagles = 0, back9Birdies = 0, back9Eagles = 0;
     let stablefordTotal = 0, front9Stableford = 0, back9Stableford = 0;
     const holeScores: (number | null)[] = [], holeNetScores: (number | null)[] = [], holeStablefordPoints: (number | null)[] = [];
     for (let i = 0; i < 18; i++) {
@@ -275,7 +282,7 @@ export function computeStablefordLeaderboard(players: Player[], allScores: Score
       holeScores.push(gross);
       if (gross !== null) {
         holesPlayed++; grossTotal += gross;
-        const net = getNetScoreForHole(gross, player.handicap, i, course)!;
+        const net = getNetScoreForHole(gross, effectiveHcp, i, course)!;
         netTotal += net; holeNetScores.push(net);
         const pts = getStablefordPoints(net, course.holePars[i]);
         holeStablefordPoints.push(pts);
@@ -283,7 +290,13 @@ export function computeStablefordLeaderboard(players: Player[], allScores: Score
         if (i < 9) { front9Net += net; front9Gross += gross; front9Stableford += pts; }
         else { back9Net += net; back9Gross += gross; back9Stableford += pts; }
         const par = course.holePars[i];
-        if (gross <= par - 2) eagles++; else if (gross === par - 1) birdies++;
+        if (gross <= par - 2) {
+          eagles++;
+          if (i < 9) front9Eagles++; else back9Eagles++;
+        } else if (gross === par - 1) {
+          birdies++;
+          if (i < 9) front9Birdies++; else back9Birdies++;
+        }
       } else { holeNetScores.push(null); holeStablefordPoints.push(null); }
     }
     let parPlayed = 0;
@@ -292,7 +305,7 @@ export function computeStablefordLeaderboard(players: Player[], allScores: Score
     const fmtVp = (d: number) => d === 0 ? "E" : (d > 0 ? "+" + d : "" + d);
     const vsParDisplay = holesPlayed === 0 ? "-" : fmtVp(gd);
     const netVsParDisplay = holesPlayed === 0 ? "-" : fmtVp(nd);
-    return { player, grossTotal, netTotal, front9Net, back9Net, front9Gross, back9Gross, holesPlayed, birdies, eagles, vsParDisplay, netVsParDisplay, holeScores, holeNetScores, stablefordTotal, front9Stableford, back9Stableford, holeStablefordPoints };
+    return { player, grossTotal, netTotal, front9Net, back9Net, front9Gross, back9Gross, holesPlayed, birdies, eagles, front9Birdies, front9Eagles, back9Birdies, back9Eagles, vsParDisplay, netVsParDisplay, holeScores, holeNetScores, stablefordTotal, front9Stableford, back9Stableford, holeStablefordPoints };
   });
   // Stableford: highest points wins (descending)
   entries.sort((a, b) => {
@@ -393,7 +406,7 @@ export function buildAchievementsMap(allAchievements: Achievement[]): Map<number
 
 export function computeActionDots(
   players: Player[], allScores: Score[], allAchievements: Achievement[],
-  dotConfig: DotConfig, course: CourseData,
+  dotConfig: DotConfig, course: CourseData, allowancePercent: number = 100,
 ): ActionDotEntry[] {
   const scoresMap = buildScoresMap(allScores);
   const achievementsMap = buildAchievementsMap(allAchievements);
@@ -403,9 +416,10 @@ export function computeActionDots(
   for (const p of players) {
     const nets: (number | null)[] = [];
     const ps = scoresMap.get(p.id) || new Map();
+    const effectiveHcp = Math.round((p.handicap || 0) * allowancePercent / 100);
     for (let i = 0; i < 18; i++) {
       const gross = ps.get(i + 1)?.grossScore ?? null;
-      nets.push(gross !== null ? getNetScoreForHole(gross, p.handicap, i, course) : null);
+      nets.push(gross !== null ? getNetScoreForHole(gross, effectiveHcp, i, course) : null);
     }
     playerNetByHole.set(p.id, nets);
   }

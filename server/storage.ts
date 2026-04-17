@@ -56,6 +56,7 @@ async function initDatabase(): Promise<void> {
     "ALTER TABLE roster ADD COLUMN handicap_index REAL",
     "ALTER TABLE players ADD COLUMN flight INTEGER DEFAULT 0",
     "ALTER TABLE players ADD COLUMN withdrawn INTEGER DEFAULT 0",
+    "ALTER TABLE players ADD COLUMN tee_id TEXT",
     // Game modes + Action/Dots config
     "ALTER TABLE games ADD COLUMN game_mode TEXT NOT NULL DEFAULT 'stroke'",
     "ALTER TABLE games ADD COLUMN dot_value REAL DEFAULT 1",
@@ -97,6 +98,8 @@ async function initDatabase(): Promise<void> {
     "ALTER TABLE achievements ADD COLUMN four_putt INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE achievements ADD COLUMN tiger_ld INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE achievements ADD COLUMN mole INTEGER NOT NULL DEFAULT 0",
+    // Handicap allowance (% applied to player.handicap for net score calculations)
+    "ALTER TABLE games ADD COLUMN handicap_allowance INTEGER NOT NULL DEFAULT 100",
   ];
   for (const m of migrations) {
     try { await client.execute(m); } catch {}

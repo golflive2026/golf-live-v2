@@ -34,20 +34,21 @@ export default function Settlement({ game, players, scores, course, achievements
     let settlement: ReturnType<typeof computeSettlement>;
     let entries: ReturnType<typeof computeLeaderboard>;
 
+    const allowance = (game as any).handicapAllowance ?? 100;
     if (isAction) {
       const dotConfig: DotConfig = Object.fromEntries(
         Object.keys(DEFAULT_DOTS).map(k => [k, (game as any)[k] ?? (DEFAULT_DOTS as any)[k]])
       ) as DotConfig;
-      const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course);
+      const dotEntries = computeActionDots(players, scores, achievements ?? [], dotConfig, course, allowance);
       const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
       settlement = computeActionSettlement(dotEntries, dotValue);
-      entries = computeLeaderboard(players, scores, course);
+      entries = computeLeaderboard(players, scores, course, allowance);
     } else if (isStableford) {
-      const stablefordEntries = computeStablefordLeaderboard(players, scores, course);
+      const stablefordEntries = computeStablefordLeaderboard(players, scores, course, allowance);
       settlement = computeStablefordSettlement(stablefordEntries, scores, players, game, course, isLive);
       entries = stablefordEntries;
     } else {
-      entries = computeLeaderboard(players, scores, course);
+      entries = computeLeaderboard(players, scores, course, allowance);
       settlement = computeSettlement(entries, scores, players, game, course, isLive);
     }
 

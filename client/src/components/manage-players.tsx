@@ -124,7 +124,7 @@ export default function ManagePlayers({ gameId, players }: ManagePlayersProps) {
     }
   };
 
-  const setWithdraw = async (playerId: number, mode: 0 | 1 | 2) => {
+  const setWithdraw = async (playerId: number, mode: 0 | 1 | 2 | 3) => {
     try {
       await apiRequest("PATCH", `/api/players/${playerId}/withdraw`, { mode });
       await queryClient.invalidateQueries({ queryKey: ["/api/games", gameId, "full"] });
@@ -134,6 +134,8 @@ export default function ManagePlayers({ gameId, players }: ManagePlayersProps) {
             ? "Player reactivated"
             : mode === 1
             ? "Withdrew (F9 only)"
+            : mode === 3
+            ? "Played B9 only"
             : "Excluded from bets",
       });
       setWithdrawTarget(null);
@@ -243,17 +245,15 @@ export default function ManagePlayers({ gameId, players }: ManagePlayersProps) {
                     {(p as any).withdrawn === 2 && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 ml-2">↩ Out</span>
                     )}
+                    {(p as any).withdrawn === 3 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">↩ B9</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setWithdrawTarget(p)}
-                    title="Withdraw / exclude"
-                  >
-                    <LogOut className="w-4 h-4 text-muted-foreground" />
+                  <Button variant="ghost" size="sm" className="h-8 px-2 gap-1" onClick={() => setWithdrawTarget(p)} title="Withdraw / exclude">
+                    <LogOut className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground">Withdraw</span>
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -309,6 +309,18 @@ export default function ManagePlayers({ gameId, players }: ManagePlayersProps) {
                   </div>
                 </Button>
               )}
+              {withdrawTarget && (withdrawTarget as any).withdrawn !== 3 && (
+                <Button
+                  variant="outline"
+                  className="h-auto py-3 justify-start text-left"
+                  onClick={() => withdrawTarget && setWithdraw(withdrawTarget.id, 3)}
+                >
+                  <div>
+                    <div className="font-bold">Played B9 only (joined late)</div>
+                    <div className="text-xs text-muted-foreground">Include in B9 bets only — excluded from F9 + Full</div>
+                  </div>
+                </Button>
+              )}
               {withdrawTarget && (withdrawTarget as any).withdrawn !== 2 && (
                 <Button
                   variant="outline"
@@ -321,7 +333,7 @@ export default function ManagePlayers({ gameId, players }: ManagePlayersProps) {
                   </div>
                 </Button>
               )}
-              {withdrawTarget && ((withdrawTarget as any).withdrawn === 1 || (withdrawTarget as any).withdrawn === 2) && (
+              {withdrawTarget && ((withdrawTarget as any).withdrawn === 1 || (withdrawTarget as any).withdrawn === 2 || (withdrawTarget as any).withdrawn === 3) && (
                 <Button
                   variant="outline"
                   className="justify-start h-auto py-3"

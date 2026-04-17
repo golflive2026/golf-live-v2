@@ -45,20 +45,29 @@ export function courseHandicap(handicapIndex: number, slope: number, courseRatin
   return Math.round(handicapIndex * (slope / 113) + (courseRating - par));
 }
 
+// Get effective course rating + slope, preferring tee-specific values if teeId provided
+export function getEffectiveTeeRating(course: CourseData, teeId?: string | null): { rating: number; slope: number } {
+  if (teeId && course.tees) {
+    const tee = course.tees.find(t => t.id === teeId);
+    if (tee) return { rating: tee.courseRating, slope: tee.slope };
+  }
+  return { rating: course.courseRating ?? course.totalPar, slope: course.slope ?? 113 };
+}
+
 // Compute WHS handicap from a player's history of finished games
 export interface PlayerRound {
   holeScores: (number | null)[];
   course: CourseData;
   storedHandicap: number;  // course handicap at time of round (use stored as approximation)
+  teeId?: string | null;   // optional tee box used in that round
 }
 
 export function computeHandicapFromRounds(rounds: PlayerRound[]): { index: number | null; differentials: number[] } {
   const differentials: number[] = [];
   for (const r of rounds) {
-    const slope = r.course.slope ?? 113;
-    const cr = r.course.courseRating ?? r.course.totalPar;
+    const { rating, slope } = getEffectiveTeeRating(r.course, r.teeId);
     const ags = adjustedGrossScore(r.holeScores, r.course, r.storedHandicap);
-    const diff = scoreDifferential(ags, cr, slope);
+    const diff = scoreDifferential(ags, rating, slope);
     differentials.push(diff);
   }
   const index = rawHandicapIndex(differentials);

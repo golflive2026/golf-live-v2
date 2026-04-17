@@ -20,7 +20,7 @@ function generateCode(): string {
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
 
   app.get("/api/courses", (_req, res) => {
-    res.json(COURSE_LIST.map(c => ({ id: c.id, name: c.name, location: c.location, totalPar: c.totalPar })));
+    res.json(COURSE_LIST.map(c => ({ id: c.id, name: c.name, location: c.location, totalPar: c.totalPar, tees: c.tees })));
   });
 
   app.get("/api/games", async (_req, res) => {
@@ -29,7 +29,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/games", async (req, res) => {
     try {
-      const { name, date, courseId, gameMode, ldCtpMode,
+      const { name, date, courseId, gameMode, ldCtpMode, handicapAllowance,
         first9Bet, second9Bet, wholeGameBet, birdiePot, eaglePot, longestDriveBet, closestPinBet,
         dotValue, dotBirdie, dotEagle, dotAlbatross, dotDoubleBogey,
         dotSandy, dotChipIn, dotGreenie, dotLongestDrive, dotClosestPin,
@@ -50,6 +50,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         birdiePot: birdiePot ?? 3, eaglePot: eaglePot ?? 30,
         longestDriveBet: longestDriveBet ?? 3, closestPinBet: closestPinBet ?? 3,
         ldCtpMode: ldCtpMode || "simple",
+        handicapAllowance: handicapAllowance ?? 100,
         dotValue: dotValue ?? 1,
         dotBirdie: dotBirdie ?? 1, dotEagle: dotEagle ?? 2, dotAlbatross: dotAlbatross ?? 5,
         dotDoubleBogey: dotDoubleBogey ?? -1,
@@ -132,7 +133,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!game) return res.status(404).json({ error: "Game not found" });
       const existingPlayers = await storage.getPlayersByGame(gameId);
       if (existingPlayers.length >= 50) return res.status(400).json({ error: "Maximum 50 players" });
-      const { name, handicap, rosterId, flight } = req.body;
+      const { name, handicap, rosterId, flight, teeId } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       // Check for duplicate player name in this game
       if (existingPlayers.some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
@@ -144,7 +145,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const rosterEntry = await storage.upsertRoster(name.trim(), handicap ?? 0);
         if (!linkedRosterId) linkedRosterId = rosterEntry.id;
       } catch (e) {}
-      const player = await storage.createPlayer({ gameId, name: name.trim(), handicap: handicap ?? 0, rosterId: linkedRosterId, flight: flight ?? 0 });
+      const player = await storage.createPlayer({ gameId, name: name.trim(), handicap: handicap ?? 0, rosterId: linkedRosterId, flight: flight ?? 0, teeId: teeId ?? null });
       res.json(player);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -153,7 +154,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.patch("/api/players/:id/withdraw", async (req, res) => {
     try {
       const { mode } = req.body;
-      if (![0, 1, 2].includes(mode)) return res.status(400).json({ error: "mode must be 0, 1, or 2" });
+      if (![0, 1, 2, 3].includes(mode)) return res.status(400).json({ error: "mode must be 0 (active), 1 (F9 only), 2 (excluded), or 3 (B9 only)" });
       const rows = await db.update(players).set({ withdrawn: mode }).where(eq(players.id, Number(req.params.id))).returning();
       if (!rows[0]) return res.status(404).json({ error: "Player not found" });
       res.json(rows[0]);
@@ -494,7 +495,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           storage.getScoresByGame(game.id),
         ]);
         const playerScores = allScores.filter(s => s.playerId === p.id);
-        const entries = computeLeaderboard(allPlayers, allScores, course);
+        const entries = computeLeaderboard(allPlayers, allScores, course, (game as any).handicapAllowance ?? 100);
         const settlement = computeSettlement(entries, allScores, allPlayers, game, course);
         const mySettlement = settlement.find(s => s.playerId === p.id);
         const myEntry = entries.find(e => e.player.id === p.id);
@@ -542,7 +543,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const myScores = allScores.filter(s => s.playerId === lp.id);
         const holeScores: (number | null)[] = Array(18).fill(null);
         for (const s of myScores) holeScores[s.hole - 1] = s.grossScore;
-        rounds.push({ holeScores, course, storedHandicap: gh.handicap });
+        rounds.push({ holeScores, course, storedHandicap: gh.handicap, teeId: (lp as any).teeId ?? null });
       }
       const whs = computeHandicapFromRounds(rounds);
 

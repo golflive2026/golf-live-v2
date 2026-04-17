@@ -42,7 +42,8 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
     const dotConfig: DotConfig = Object.fromEntries(
       Object.keys(DEFAULT_DOTS).map(k => [k, (game as any)[k] ?? (DEFAULT_DOTS as any)[k]])
     ) as DotConfig;
-    const dotEntries = useMemo(() => computeActionDots(players, scores, achievements ?? [], dotConfig, course), [players, scores, achievements, dotConfig, course]);
+    const allowance = (game as any).handicapAllowance ?? 100;
+    const dotEntries = useMemo(() => computeActionDots(players, scores, achievements ?? [], dotConfig, course, allowance), [players, scores, achievements, dotConfig, course, allowance]);
     const dotValue = game.dotValue ?? DEFAULT_DOTS.dotValue;
 
     return (
@@ -163,9 +164,10 @@ export default function Bets({ game, players, scores, course, achievements }: Pr
 
   // Stroke or Stableford mode — tabbed view
   const isStableford = game.gameMode === "stableford";
+  const allowance = (game as any).handicapAllowance ?? 100;
   const entries = useMemo(() => isStableford
-    ? computeStablefordLeaderboard(players, scores, course)
-    : computeLeaderboard(players, scores, course), [players, scores, course, isStableford]);
+    ? computeStablefordLeaderboard(players, scores, course, allowance)
+    : computeLeaderboard(players, scores, course, allowance), [players, scores, course, isStableford, allowance]);
   const isLive = game.status === "active";
   const matchPlay = useMemo(() => isStableford
     ? computeStablefordMatchPlay(entries as any, game.first9Bet, game.second9Bet, game.wholeGameBet, isLive)

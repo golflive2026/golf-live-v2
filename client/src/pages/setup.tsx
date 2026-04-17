@@ -15,13 +15,16 @@ import { ArrowLeft, Plus, Trash2, Play, DollarSign, Users, MapPin, UserPlus, Pen
 interface PlayerInput {
   name: string;
   handicap: number;
+  teeId?: string;
 }
 
+interface TeeOption { id: string; name: string; courseRating: number; slope: number; gender?: "M" | "F" }
 interface CourseOption {
   id: string;
   name: string;
   location: string;
   totalPar: number;
+  tees?: TeeOption[];
 }
 
 export default function Setup() {
@@ -37,11 +40,13 @@ export default function Setup() {
   const [players, setPlayers] = useState<PlayerInput[]>([]);
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("18");
+  const [newTee, setNewTee] = useState<string>("");
   const [bets, setBets] = useState({ ...DEFAULT_BETS });
   const [gameMode, setGameMode] = useState<"stroke" | "stableford" | "action">("stroke");
   const [dots, setDots] = useState<Record<string, number>>({ ...DEFAULT_DOTS });
   const [ldCtpMode, setLdCtpMode] = useState("simple");
   const [carryoverEnabled, setCarryoverEnabled] = useState(false);
+  const [handicapAllowance, setHandicapAllowance] = useState(100);
   const [notifyMode, setNotifyMode] = useState<"all" | "players" | "none">("all");
   const [creating, setCreating] = useState(false);
   const [editingHcpIdx, setEditingHcpIdx] = useState<number | null>(null);
@@ -74,7 +79,7 @@ export default function Setup() {
       toast({ title: "Player already added", variant: "destructive" });
       return;
     }
-    setPlayers([...players, { name: newName.trim(), handicap: parseInt(newHcp) || 0 }]);
+    setPlayers([...players, { name: newName.trim(), handicap: parseInt(newHcp) || 0, teeId: newTee || undefined }]);
     setNewName("");
     setNewHcp("18");
   };
@@ -115,6 +120,7 @@ export default function Setup() {
         date: gameDate,
         courseId,
         gameMode,
+        handicapAllowance,
         first9Bet: bets.first9Bet,
         second9Bet: bets.second9Bet,
         wholeGameBet: bets.wholeGameBet,
@@ -136,6 +142,7 @@ export default function Setup() {
           name: p.name,
           handicap: p.handicap,
           flight: playerFlights[p.name] || 0,
+          teeId: p.teeId || null,
         });
         addedCount++;
       }
@@ -367,6 +374,22 @@ export default function Setup() {
                   <Plus className="w-5 h-5" />
                 </Button>
               </div>
+
+              {/* Tee selector — Advanced setup only, when course has multiple tees */}
+              {isAdvanced && selectedCourse?.tees && selectedCourse.tees.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground shrink-0">Tee for next player:</Label>
+                  <Select value={newTee || "default"} onValueChange={v => setNewTee(v === "default" ? "" : v)}>
+                    <SelectTrigger className="h-9 flex-1"><SelectValue placeholder="Default" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default</SelectItem>
+                      {selectedCourse.tees.map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.name} ({t.courseRating}/{t.slope}{t.gender ? `, ${t.gender}` : ""})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {rosterPlayers && rosterPlayers.length > 0 && (
                 <div className="border-t border-border pt-4">
@@ -616,6 +639,28 @@ export default function Setup() {
                   </div>
                 ))
               )}
+
+              {/* Handicap Allowance */}
+              <div className="border-t border-border pt-3 mt-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">Handicap Allowance</Label>
+                  <Select value={String(handicapAllowance)} onValueChange={v => setHandicapAllowance(Number(v))}>
+                    <SelectTrigger className="h-10 w-32" data-testid="select-handicap-allowance">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="100">100% (full)</SelectItem>
+                      <SelectItem value="95">95%</SelectItem>
+                      <SelectItem value="90">90%</SelectItem>
+                      <SelectItem value="85">85%</SelectItem>
+                      <SelectItem value="75">75% (tournament)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Applied to each player's handicap when computing net scores.
+                </p>
+              </div>
 
               {/* Notification mode */}
               <div className="border-t border-border pt-3 mt-3">

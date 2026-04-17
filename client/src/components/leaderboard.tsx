@@ -203,9 +203,10 @@ export default function Leaderboard({ players, scores, course, game, achievement
   const isStableford = game.gameMode === "stableford";
   const isAction = game.gameMode === "action";
 
+  const allowance = (game as any).handicapAllowance ?? 100;
   const entries = useMemo(() =>
-    isStableford ? computeStablefordLeaderboard(players, scores, course) : computeLeaderboard(players, scores, course),
-    [players, scores, course, isStableford]
+    isStableford ? computeStablefordLeaderboard(players, scores, course, allowance) : computeLeaderboard(players, scores, course, allowance),
+    [players, scores, course, isStableford, allowance]
   ) as (LeaderboardEntry | StablefordEntry)[];
 
   if (players.length === 0) {
@@ -254,6 +255,9 @@ export default function Leaderboard({ players, scores, course, game, achievement
                     )}
                     {(entry.player as any).withdrawn === 2 && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 shrink-0">↩ Out</span>
+                    )}
+                    {(entry.player as any).withdrawn === 3 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0">↩ B9</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
